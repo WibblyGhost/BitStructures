@@ -1,0 +1,138 @@
+### BUILD SYSTEM ###
+# NOTE: See https://peps.python.org/pep-0621/
+[project]
+name = "bitstructures"
+description="Bit Structures"
+authors=[{name="WibblyGhost"}]
+dynamic = ["version", "readme"]
+requires-python= ">=3.12"
+urls = {url = "https://github.com/WibblyGhost/bitstructures"}
+dependencies = [
+    "bitstring>=4.3.1",
+]
+
+[dependency-groups]
+dev = [
+    "faker>=33.3.1",
+    "mypy>=1.14.1",
+    "pre-commit>=4.0.0",
+    "pytest>=8.3.4",
+    "pytest-asyncio>=0.25.2",
+    "pytest-cov>=6.0.0",
+    "pytest-mock>=3.14.0",
+    "pytest-timeout>=2.3.1",
+    "ruff>=0.9.1",
+    "mypy-gitlab-code-quality>=1.1.0",
+]
+build = [
+    "setuptools>=60",
+    "setuptools-git-versioning>=2.1.0",
+]
+
+[build-system]
+requires = ["setuptools>=60", "setuptools-git-versioning"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools-git-versioning]
+enabled = true
+dev_template = "{tag}"
+dirty_template = "{tag}"
+
+[tool.setuptools.dynamic]
+readme = {file = "README.md"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+exclude = ["*tests*"]
+
+[tool.setuptools.package-data]
+"pkgname" = ["py.typed"]
+### BUILD SYSTEM ###
+
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "F",  # pyflakes
+    "E",  # pycodestyle
+    "W",  # pycodestyle
+    "I",  # isort
+    "N",  # pep8-naming
+    "UP",  # pyupgrade
+    "R",  # refactor
+    "ASYNC",  # flake8-async
+    "BLE",  # flake8-blind-except
+    "A",  # flake8-builtilns
+    "C4",  # flake8-comprehensions
+    "DTZ",  # flake8-datetimez
+    "LOG",  # flake8-logging
+    "PT",  # felake8-pytest-style
+    "Q",  # flake8-quotes
+    "RET",  #  flake8-return
+    "SLF",  # flake8-self
+    "SIM",  # flake8-simplify
+    "ARG",  # flake8-unused-arguments
+    "PTH",  # flake8-use-pathlib
+    "FIX",  # flake8-fixme
+    "PL",  # pylint
+    "RUF",  # ruff
+]
+fixable = ["ALL"]
+ignore = [
+    "PLR0915",  # too many statements
+    "PLR0912",  # too many branches
+    "PLR0913",  # too many arguments
+    "PLR2004",  # magic values
+    "RUF013",  # implicit optional (mypy)
+    "RUF012",  # classvar annotations
+    "SIM108",  # ternary oprators (single line if statements)
+    "ASYNC109",  # Use asyncio timeout instead
+    "FIX002",  # TODO statements
+]
+isort.split-on-trailing-comma = false
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*.py" = ["SLF001", "PT013"]
+
+[tool.ruff.format]
+# skip-magic-trailing-comma = true
+
+[tool.mypy]
+exclude = [".*tests/", "test.py"]
+check_untyped_defs = true
+disallow_any_generics = true
+disallow_incomplete_defs = true
+disallow_untyped_calls = true
+disallow_untyped_decorators = true
+disallow_untyped_defs = true
+extra_checks = true
+implicit_optional = true
+no_implicit_reexport = true
+no_warn_no_return = true
+strict_equality = true
+warn_redundant_casts = true
+warn_unreachable = true
+warn_unused_configs = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+addopts = "--cov --cov-report=xml --cov-report=term  --cov-report=html"  # --cov-fail-under=100
+pythonpath = ["src"]
+testpaths = ["tests"]
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.coverage.run]
+source = ["src"]
+
+[tool.coverage.report]
+omit = [
+    "*/__init__.py",
+    "*/tests/*",
+]

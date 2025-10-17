@@ -1,0 +1,92 @@
+# .pre-commit-config.yaml
+default_install_hook_types:
+  - pre-commit
+  - post-checkout
+  - post-merge
+  - post-rewrite
+exclude: "(firmware|reports|logs|.devcontainer|pymibs)/.*"
+repos:
+  - repo: https://github.com/adrienverge/yamllint.git
+    rev: v1.37.1
+    hooks:
+      - id: yamllint
+        name: yamllint
+        args: [--strict]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: end-of-file-fixer
+
+      - id: trailing-whitespace
+
+      - id: check-yaml
+        args: [-m, --unsafe]
+
+      - id: check-json
+
+      - id: check-toml
+
+      - id: check-merge-conflict
+
+      # Python Specific
+      - id: check-ast
+
+      - id: check-docstring-first
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.13.3
+    hooks:
+      # Run the linter.
+      - id: ruff-check
+        args: [--fix]
+
+      # Run the formatter.
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        stages:
+          - pre-commit
+          - pre-push
+        language: system
+        entry: uv run mypy
+        files: .*(\.py|\.pyi)$
+        args: [src]
+        pass_filenames: false
+
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest
+        stages:
+          - pre-commit
+          - pre-push
+        language: system
+        entry: uv run pytest
+        files: (src|tests)/.*(\.py|\.pyi)$
+        args:
+          - tests
+          - -q
+          - --no-summary
+          - --no-header
+        pass_filenames: false
+
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    # uv version.
+    rev: 0.8.23
+    hooks:
+      # Ensure the lockfile is up-to-date
+      - id: uv-lock
+        args: [-U]
+
+      # Synchronize your dependencies upon branch checkout, pull or rebase:
+      - id: uv-sync
+        stages:
+          - post-checkout
+          - post-merge
+          - post-rewrite
+        # Needed for any post stages
+        always_run: true

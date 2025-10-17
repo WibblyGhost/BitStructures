@@ -1,0 +1,31 @@
+# Exclude IDE workspaces
+.vscode/
+.metadata/
+.idea/
+
+# Exclude virtual environments
+*venv*/
+
+# Exclude test artifacts
+logs/**
+reports/
+htmlcov/
+
+# Pip build artifacts
+dist/
+.pytest_cache/
+*.egg-info/
+build/
+
+# Exclude artifact files
+*.log
+*.pyc
+*.tar
+*.zip
+*.conf
+*.env
+
+# Test Files
+*.coverage
+coverage.xml
+test.py
