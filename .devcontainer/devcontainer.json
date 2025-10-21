@@ -1,0 +1,32 @@
+{
+	"name": "UV: Python 3.13",
+	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
+	"image": "ghcr.io/astral-sh/uv:python3.13-bookworm",
+
+	// Features to add to the dev container. More info: https://containers.dev/features.
+	"features": {},
+
+	// Configure tool-specific properties.
+	"customizations": {
+		// Configure properties specific to VS Code.
+		"vscode": {
+			"settings": {},
+			"extensions": [
+				"balmacefa.linehighlightbookmarkvscode",
+				"charliermarsh.ruff",
+				"ms-python.debugpy",
+				"ms-python.mypy-type-checker",
+				"ms-python.python",
+				"ms-python.vscode-pylance",
+				"wayou.vscode-todo-highlight",
+				"elagil.pre-commit-helper",
+				"tamasfe.even-better-toml"
+			]
+		}
+	},
+
+	// Use 'postCreateCommand' to run commands after the container is created.
+	"postCreateCommand": "uv sync",
+	// Run a non-root user
+	"remoteUser": "vscode"
+}

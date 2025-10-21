@@ -26,7 +26,7 @@ class ParseError(CodecError):
         super().__init__(*args)
         self.add_note(f"Parent Container: {parent}")
         self.add_note(f"Subcodec: {subcodec}")
-        self.add_note(f"Peek: 0b{peek.bin}")
+        self.add_note(f"Peek(pos={peek.pos}, len={len(peek)}): 0b{peek.bin}")
 
 
 class BuildError(CodecError):

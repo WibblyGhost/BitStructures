@@ -2,9 +2,11 @@ __all__ = [
     "Adapter",
     "Array",
     "BitsInt",
+    "Bitshift",
     "Blacklisted",
     "BuildError",
     "CTypeError",
+    "Checksum",
     "Codec",
     "CodecError",
     "Computed",
@@ -24,10 +26,12 @@ __all__ = [
     "IpAddress",
     "LengthError",
     "Mapping",
+    "Optional",
     "Padding",
     "ParseError",
     "ParseReturn",
     "Pass",
+    "Peek",
     "RDivError",
     "RawBits",
     "Scaler",
@@ -35,11 +39,21 @@ __all__ = [
     "Switch",
     "TriggeredError",
     "Whitelisted",
+    "bitshift",
+    "reverse_bitshift",
 ]
-from bitstructures.adaptors.adapters import Adapter, Computed, ExprAdapter, IpAddress, Scaler
+from bitstructures.adaptors.adapters import (
+    Adapter,
+    Bitshift,
+    Computed,
+    ExprAdapter,
+    IpAddress,
+    Scaler,
+)
 from bitstructures.base.codec import (
     Array,
     BitsInt,
+    Checksum,
     Codec,
     Conditional,
     Const,
@@ -51,8 +65,10 @@ from bitstructures.base.codec import (
     GreedyArray,
     GreedyBits,
     Mapping,
+    Optional,
     Padding,
     Pass,
+    Peek,
     RawBits,
     Struct,
     Switch,
@@ -68,5 +84,6 @@ from bitstructures.exceptions import (
     RDivError,
     TriggeredError,
 )
+from bitstructures.helpers import bitshift, reverse_bitshift
 from bitstructures.typing import DefaultType, ParseReturn
 from bitstructures.validators.validators import Blacklisted, Whitelisted

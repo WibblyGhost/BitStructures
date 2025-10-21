@@ -7,6 +7,7 @@ from bitstring import BitStream, ConstBitStream
 
 from bitstructures.base.codec import BitsInt, Codec, Container
 from bitstructures.exceptions import CTypeError, InitError
+from bitstructures.helpers import bitshift
 from bitstructures.typing import ParseReturn
 
 # ---------------- Base Adapter ----------------
@@ -20,10 +21,10 @@ class Adapter(Codec):
         _name, value = self.subcodec.io_parse(io, parent).popitem()
         return Container({self.name: self.decode(value, parent)})
 
-    def io_build(self, io: BitStream, container: Container) -> None:
-        encoded = self.encode(container[self.name])
-        container[self.name] = encoded
-        return self.subcodec.io_build(io, container)
+    def io_build(self, io: BitStream, parent: Container) -> None:
+        encoded = self.encode(parent[self.name])
+        parent[self.name] = encoded
+        return self.subcodec.io_build(io, parent)
 
     # ---- OVERRIDE ----
 
@@ -40,7 +41,7 @@ class Adapter(Codec):
 
 
 class IpAddress(Adapter):
-    def decode(self, value: int, parent: Container) -> str:
+    def decode(self, value: int, parent: Container) -> str:  # noqa: ARG002
         return str(IPv4Address(value))
 
     def encode(self, value: str) -> int:
@@ -48,7 +49,7 @@ class IpAddress(Adapter):
 
 
 class Scaler(Adapter):
-    def __init__(self, subcodec: Codec, factor: float) -> None:
+    def __init__(self, subcodec: Codec, /, factor: float) -> None:
         if not isinstance(subcodec, BitsInt):
             raise CTypeError(
                 f"{self.__class__.__name__} adapter only support integer {Codec.__name__}'s, "
@@ -57,7 +58,7 @@ class Scaler(Adapter):
         super().__init__(subcodec)
         self._factor = factor
 
-    def decode(self, value: float, parent: Container) -> float:
+    def decode(self, value: float, parent: Container) -> float:  # noqa: ARG002
         return value * self._factor
 
     def encode(self, value: float) -> float:
@@ -100,5 +101,33 @@ class Computed(Codec):
         container = super().io_parse(io, parent)
         return self.function(container, *self.args, **self.kwargs)
 
-    def io_build(self, io: BitStream, container: Container) -> None:
+    def io_build(self, io: BitStream, parent: Container) -> None:  # noqa: ARG002
         return
+
+
+class Bitshift(Codec):
+    """
+    Codec which deals with splitting addresses into multiple
+    bit fields, done by checking the size of the packet and
+    applying a bitshift to combine the two packets
+    """
+
+    def __init__(
+        self,
+        funct: Callable[[Container, Any], int] = bitshift,
+        *args,
+        **kwargs,
+    ) -> None:
+        self._size = 0
+        super().__init__()
+        self._funct = funct
+        self._args = args
+        self._kwargs = kwargs
+
+    def io_build(self, io: BitStream, parent: Container) -> None:
+        """The bitshift doesn't get built through this Codes and must be done beforehand"""
+
+    def io_parse(self, io: ConstBitStream, parent: Container) -> Container:  # noqa: ARG002
+        bitshifted = self._funct(parent, *self._args, **self._kwargs)
+        parent[self.name] = bitshifted
+        return parent
