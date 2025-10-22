@@ -14,6 +14,7 @@ __all__ = [
     "Const",
     "ConstantError",
     "Container",
+    "Container",
     "Default",
     "DefaultType",
     "Enum",
@@ -29,7 +30,6 @@ __all__ = [
     "Optional",
     "Padding",
     "ParseError",
-    "ParseReturn",
     "Pass",
     "Peek",
     "RDivError",
@@ -85,5 +85,5 @@ from bitstructures.exceptions import (
     TriggeredError,
 )
 from bitstructures.helpers import bitshift, reverse_bitshift
-from bitstructures.typing import DefaultType, ParseReturn
+from bitstructures.typing import DefaultType
 from bitstructures.validators.validators import Blacklisted, Whitelisted

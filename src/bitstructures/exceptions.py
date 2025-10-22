@@ -2,8 +2,9 @@ from typing import TYPE_CHECKING
 
 from bitstring import ConstBitStream
 
+
 if TYPE_CHECKING:
-    from bitstructures.base.codec import Codec, Container
+    from bitstructures.base.codec import Codec, Stack, Container
 
 
 class CodecError(Exception): ...
@@ -20,19 +21,23 @@ class SizeError(CodecError): ...
 
 class ParseError(CodecError):
     def __init__(
-        self, parent: "Container", subcodec: "Codec", peek: ConstBitStream, *args: object
+        self, parent: "Stack", subcodec: "Codec", peek: ConstBitStream, *args: object
     ) -> None:
         self.io = peek
         super().__init__(*args)
-        self.add_note(f"Parent Container: {parent}")
+        self.add_note(f"Parent Stack:\n{parent.pprint()}")
         self.add_note(f"Subcodec: {subcodec}")
         self.add_note(f"Peek(pos={peek.pos}, len={len(peek)}): 0b{peek.bin}")
 
 
 class BuildError(CodecError):
-    def __init__(self, subcodec: "Codec", *args: object) -> None:
+    def __init__(
+        self, parent: "Stack", subcodec: "Codec", container: "Container", *args: object
+    ) -> None:
         super().__init__(*args)
+        self.add_note(f"Parent Stack:\n{parent.pprint()}")
         self.add_note(f"Subcodec: {subcodec}")
+        self.add_note(f"Container: {container}")
 
 
 class LengthError(CodecError): ...
@@ -45,3 +50,6 @@ class ConstantError(CodecError): ...
 
 
 class RDivError(CodecError): ...
+
+
+class FrozenError(CodecError): ...

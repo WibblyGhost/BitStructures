@@ -1,12 +1,8 @@
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from bitstructures.base.codec import Codec, Container, _Error, _Pass
+    from bitstructures.base.codec import Stack, _Error, _Pass
 
-type ErrorType = "_Error"
-type PassType = "_Pass"
-type CodecType = "Codec"
-type DefaultType = "PassType | ErrorType | CodecType"
-type ParseReturn = "Container | PassType | ErrorType"
-type LambdaType = Callable[[Container], Any]
+type DefaultType = "_Pass | _Error"
+type FunctType = "Callable[[Stack], int]"

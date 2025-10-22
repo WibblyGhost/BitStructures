@@ -20,7 +20,8 @@
 				"ms-python.vscode-pylance",
 				"wayou.vscode-todo-highlight",
 				"elagil.pre-commit-helper",
-				"tamasfe.even-better-toml"
+				"tamasfe.even-better-toml",
+				"mhutchie.git-graph"
 			]
 		}
 	},

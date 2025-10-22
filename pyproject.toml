@@ -23,6 +23,7 @@ dev = [
     "pytest-timeout>=2.3.1",
     "ruff>=0.9.1",
     "mypy-gitlab-code-quality>=1.1.0",
+    "scapy>=2.6.1",
 ]
 build = [
     "setuptools>=60",
