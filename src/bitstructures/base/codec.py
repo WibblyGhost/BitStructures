@@ -12,12 +12,11 @@ from bitstructures.exceptions import (
     BuildError,
     ConstantError,
     CTypeError,
+    FrozenError,
     InitError,
-    LengthError,
     ParseError,
     RDivError,
     SizeError,
-    FrozenError,
     TriggeredError,
 )
 from bitstructures.typing import DefaultType, FunctType
@@ -47,9 +46,9 @@ class Singleton(type):
 
 
 @dataclass(slots=True, frozen=True)
-class Value[T: (str, int, float, ConstBitStream, "StackV")]:
+class Value:
     name: str
-    v_item: T
+    v_item: "str | int | Enumerate | ConstBitStream | StackV"
     size: int = field(default=-1, compare=False, hash=False)
 
     def __post_init__(self) -> None:
@@ -80,12 +79,12 @@ class Value[T: (str, int, float, ConstBitStream, "StackV")]:
         return int(self.v_item)
 
 
-class Container(UserDict[str, Value]):
-    def __getattr__(self, attr: str) -> Value | None:
+class Container(UserDict[str, "Value | StackV"]):
+    def __getattr__(self, attr: str) -> "Value | StackV | None":
         return self.get(attr)
 
 
-class Stack[T: (tuple[str, "Codec"], Value)]:
+class Stack[T: ("Codec", Value)]:
     def __init__(self) -> None:
         self.items: list[T] = []
         self._frozen: bool = False
@@ -100,6 +99,9 @@ class Stack[T: (tuple[str, "Codec"], Value)]:
     def __str__(self) -> str:
         return f"{self.__class__.__name__}({self.items})"
 
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({self.items})"
+
     def pop(self, index: SupportsIndex = -1) -> T:
         self._check_frozen()
         return self.items.pop(index)
@@ -111,17 +113,21 @@ class Stack[T: (tuple[str, "Codec"], Value)]:
     def empty(self) -> bool:
         return not self.items
 
-    def push(self, item: T) -> None:
-        self._check_frozen()
-        name = item.name
+    def _validate_item(self, item: T) -> None:
         # Don't allow duplicate names in the codec
         # unless it's a special privately defined field
-        if not name.startswith("__") and name in self:            raise KeyError(f"Key name {name} already exists in the stack")
+        name = item.name
+        if not name.startswith("__") and name in self:
+            raise KeyError(f"Key name {name} already exists in the stack")
+
+    def push(self, item: T) -> None:
+        self._check_frozen()
+        self._validate_item(item)
         self.items.append(item)
 
     def __contains__(self, key: str) -> bool:
         return key in {item.name for item in self.items}
-    
+
     def __iter__(self) -> Generator[tuple[int, T], Any, None]:
         yield from enumerate(self.items)
 
@@ -130,27 +136,12 @@ class StackC(Stack["Codec"]):
     """For use in the Structs"""
 
 
-
 class StackV(Stack[Value]):
     """For use in the parsing and building"""
 
     @override
     def __str__(self) -> str:
         return f"{self.__class__.__name__}({self.to_container()})"
-
-    def pprint(self) -> str:
-        padding = f"\t{'-' * 40}\n"
-        stack = ""
-        size = 0
-
-        for _sn, item in flatten(self):
-            size += item.size
-            size %= 8
-            if size == 0:
-                stack += padding
-            stack += f"\t{item.pprint()}\n"
-            # Divide the formats into segments of 8 bits
-        return stack
 
     def get(self, key: str) -> tuple[int, Value]:
         for sn, item in self:
@@ -162,35 +153,47 @@ class StackV(Stack[Value]):
         _sn, item = self.get(attr)
         return item.v_item
 
-    def to_container(self) -> Container:
-        container = Container()
-        for _sn, item in flatten(self):
-            if item.name.startswith("__"):
-                continue
-            container[item.name] = item.v_item
-        return container
-
     def sizeof(self) -> int:
         return sum(item.size for item in self.items)
 
-    def get_io(self):
+    def to_container(self) -> Container:
+        # RECURSIVE
+        container = Container()
         for _sn, item in self:
-            if isinstance(item, StackV):
-                yield from item.get_io()
+            if isinstance(item.v_item, StackV):
+                container[item.name] = item.v_item.to_container()
+            elif item.name.startswith("__"):
+                continue  # Not a public attribute
+            elif item.name in container:
+                raise KeyError(f"Key name {item.name} already exists in the container")
             else:
-                yield item.v_item
+                container[item.name] = item.v_item
+        return container
 
-def flatten(parent: "StackV", *, stack: "StackV | None" = None) -> StackV:
-    # RECURSIVE
-    if stack is None:
-        stack = StackV()
-    # TODO: Handle duplicates and non-embedded stuctures
-    for _sn, item in parent:
-        if isinstance(item.v_item, StackV):
-            _ = flatten(item.v_item, stack=stack)
-        else:
-            stack.push(item)
-    return stack
+    def pprint(self, *, depth: int = 1) -> str:
+        # RECURSIVE
+        padding = "\t{t}{v:-^38}{t}\n"
+        stack = ""
+        size = 0
+        for _sn, item in self:
+            if isinstance(item.v_item, StackV):
+                stack += padding.format(t=">" * depth, v=f"{item.name} {item.size}")
+                stack += item.v_item.pprint(depth=depth + 1)
+                stack += padding.format(t="<" * depth, v="")
+            else:
+                stack += f"\t{item.pprint()}\n"
+            size += item.size
+        return stack
+
+    def get_io(self) -> ConstBitStream:
+        # RECURSIVE
+        io = BitStream()
+        for _sn, item in self:
+            if isinstance(item.v_item, StackV):
+                io += item.v_item.get_io()
+            else:
+                io += ConstBitStream(item.v_item)
+        return ConstBitStream(io)
 
 
 # ---------------- Bits ----------------
@@ -210,7 +213,7 @@ class Codec:
                             Only used in certain subclasses
         """
         self.name = self.__class__.__name__.lower()
-        self.size: int | Callable[[Container], int] = subcodec.size if subcodec else -1
+        self.size: int | Callable[[StackV], int] = subcodec.size if subcodec else -1
         self._subcodec = subcodec or self
 
     @property
@@ -251,7 +254,7 @@ class Codec:
             )
         raise CTypeError(f"Unhandled type {type(other)} for division")
 
-    def sizeof(self, parent: StackV, io: ConstBitStream = None) -> int:
+    def sizeof(self, parent: StackV, io: ConstBitStream | None = None) -> int:  # noqa: ARG002
         size: int = self.size(parent) if callable(self.size) else self.size
         if size < 0:  # If size is negative
             raise SizeError(f"Cannot perform a size method on {self.__class__.__name__}, {parent=}")
@@ -261,13 +264,6 @@ class Codec:
     def _parse_io(raw: bytes) -> ConstBitStream:
         """Converts raw bytes into a ConstBitStream to work with"""
         return ConstBitStream(raw)
-
-    @staticmethod
-    def _stack_to_bits(parent: StackV) -> ConstBitStream:
-        io = BitStream()
-        for io_ in parent.get_io():
-            io += io_
-        return ConstBitStream(io)
 
     def _read_io(self, io: ConstBitStream | Bits, parent: StackV) -> tuple[ConstBitStream, int]:
         """
@@ -317,7 +313,7 @@ class Codec:
             raise BuildError(
                 parent,
                 self.subcodec,
-                Container(value=value),
+                Container({"value": value}),
                 "Ran into an error writing ConstBitStream",
             ) from err
         parent.push(Value(name, io, len(io)))
@@ -362,7 +358,8 @@ class Codec:
     #     self.io_build(io, parent, container)
     #     if len(io) % 8 != 0:
     #         raise BuildError(
-    #             parent, self.subcodec, container, "Built container must be divisible by 8 (1 byte)"
+    #             parent, self.subcodec, container,
+    #             "Built container must be divisible by 8 (1 byte)"
     #         )
     #     return bytes(io)
 
@@ -442,7 +439,13 @@ class Struct(Codec):
             parent.push(Value(self.name, stack, size=stack.sizeof()))
 
     def build(self, container: Container) -> bytes:
-        # OVERRIDES BASE BUILD FUNCTION
+        """
+        Called externally via users.
+
+        Handles the core building of a Container into a bytes object,
+        by passing the Container into the io_build for custom parsing.
+        - Generally not modified in subclasses
+        """
         parent = StackV()
         for _sn, subcodec in self.subcodecs:
             if subcodec.name not in container and not isinstance(
@@ -456,7 +459,7 @@ class Struct(Codec):
                 )
             subcodec.io_build(parent, container)
 
-        io = self._stack_to_bits(parent)
+        io = parent.get_io()
         if len(io) % 8 != 0:
             raise BuildError(
                 parent, subcodec, container, f"Built bits must be divisible by 8 (1 byte), {io!r}"
@@ -580,7 +583,7 @@ class Padding(Codec):
 
     def io_parse(self, io: ConstBitStream, parent: StackV) -> None:
         _, size = self._read_io(io, parent)
-        parent.push(Value("__padding", None, size))
+        parent.push(Value("__padding", ConstBitStream(length=size), size))
 
     def io_build(self, parent: StackV, container: Container) -> None:  # noqa: ARG002
         i = 0
@@ -764,7 +767,7 @@ class Switch[MKey: Any, MValue: Codec](Codec):
             codec.name = self.name
         self._default = default
 
-    def __rtruediv__(self, other):
+    def __rtruediv__(self, other: Any) -> Self:
         for key, codec in self.mapping.items():
             self.mapping[key] = codec.__rtruediv__(other)
         return super().__rtruediv__(other)
@@ -910,7 +913,7 @@ class GreedyBits(Codec):
         super().__init__()
         self._max_size: FunctType | int = max_size
 
-    def sizeof(self, parent, io):
+    def sizeof(self, parent: StackV, io: ConstBitStream) -> int:
         if callable(self._max_size):
             size = self._max_size(parent)
         elif self._max_size == 0:
@@ -963,7 +966,7 @@ class Conditional(Codec):
     #     else:
     #         self.else_.io_build(io, parent, container)
 
-    def sizeof(self, io: ConstBitStream, parent: StackV) -> int:
+    def sizeof(self, parent: StackV, io: ConstBitStream) -> int:
         if self.condition(parent):
             return self.then_.sizeof(parent, io)
         return self.else_.sizeof(parent, io)
@@ -979,3 +982,19 @@ class Optional(Codec):
     def io_build(self, parent: StackV, container: Container) -> None:
         if self.name in container:
             self._subcodec.io_build(parent, container)
+
+
+# ---------------- Helpers ----------------
+
+
+def flatten(parent: StackV, *, stack: StackV | None = None) -> StackV:
+    # RECURSIVE
+    if stack is None:
+        stack = StackV()
+    # TODO: Handle duplicates and non-embedded stuctures
+    for _sn, item in parent:
+        if isinstance(item.v_item, StackV):
+            _ = flatten(item.v_item, stack=stack)
+        else:
+            stack.push(item)
+    return stack

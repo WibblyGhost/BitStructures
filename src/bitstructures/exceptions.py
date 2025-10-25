@@ -2,9 +2,8 @@ from typing import TYPE_CHECKING
 
 from bitstring import ConstBitStream
 
-
 if TYPE_CHECKING:
-    from bitstructures.base.codec import Codec, Stack, Container
+    from bitstructures.base.codec import Codec, Container, StackV
 
 
 class CodecError(Exception): ...
@@ -21,7 +20,7 @@ class SizeError(CodecError): ...
 
 class ParseError(CodecError):
     def __init__(
-        self, parent: "Stack", subcodec: "Codec", peek: ConstBitStream, *args: object
+        self, parent: "StackV", subcodec: "Codec", peek: ConstBitStream, *args: object
     ) -> None:
         self.io = peek
         super().__init__(*args)
@@ -32,7 +31,7 @@ class ParseError(CodecError):
 
 class BuildError(CodecError):
     def __init__(
-        self, parent: "Stack", subcodec: "Codec", container: "Container", *args: object
+        self, parent: "StackV", subcodec: "Codec", container: "Container", *args: object
     ) -> None:
         super().__init__(*args)
         self.add_note(f"Parent Stack:\n{parent.pprint()}")

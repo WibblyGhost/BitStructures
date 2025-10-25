@@ -17,7 +17,6 @@ from bitstructures import (
     Enum,
     ExprAdapter,
     Flag,
-    GreedyBits,
     IpAddress,
     Optional,
     Padding,
@@ -33,24 +32,20 @@ IPV4_HEADER = Struct(
         encoder=lambda obj: obj * 4,
         decoder=lambda obj: ceil(obj / 4),
     ),
-    "tos" /
-    Struct(
+    "tos"
+    / Struct(
         "precedence" / BitsInt(3),
         "minimize_delay" / Flag(),
         "high_throuput" / Flag(),
         "high_reliability" / Flag(),
         "minimize_cost" / Flag(),
         Padding(1),
-        embedded=False
+        embedded=False,
     ),
     "total_length" / BitsInt(16),
     "identification" / BitsInt(16),
-    "flags" / Struct(
-        Padding(1),
-        "dont_fragment" / Flag(),
-        "more_fragments" / Flag(),
-        embedded=False
-    ),
+    "flags"
+    / Struct(Padding(1), "dont_fragment" / Flag(), "more_fragments" / Flag(), embedded=False),
     "fragment_offset" / BitsInt(13),
     "ttl" / BitsInt(8),
     "protocol"
@@ -78,7 +73,8 @@ TCP_HEADER = Struct(
         decoder=lambda obj: ceil(obj / 4),
     ),
     Padding(3),
-    "flags" / Struct(
+    "flags"
+    / Struct(
         "ns" / Flag(),
         "cwr" / Flag(),
         "ece" / Flag(),
@@ -88,7 +84,7 @@ TCP_HEADER = Struct(
         "rst" / Flag(),
         "syn" / Flag(),
         "fin" / Flag(),
-        embedded=False
+        embedded=False,
     ),
     "window" / BitsInt(16),
     "checksum" / BitsInt(16),
@@ -117,3 +113,17 @@ IP_PACKET = Struct(
     "header" / Switch(lambda packet: packet.protocol, {"UDP": UDP_HEADER, "TCP": TCP_HEADER}),
     # "payload" / GreedyBits(),
 )
+
+
+if __name__ == "__main__":
+    from scapy.layers.inet import IP, UDP
+
+    ip = IP(src="127.0.0.1", dst="8.8.8.8") / UDP(dport=53)
+    ip_data = ip.build()
+    print(len(ip_data))
+    stack = IP_PACKET.parse(ip_data)
+    print(f"DECODED:\n{stack.pprint()}")
+    container = stack.to_container()
+    print(f"Container:\n{container!s}")
+    raw = IP_PACKET.build(container)
+    print(f"RAW:\n{raw!r}")

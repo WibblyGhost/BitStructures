@@ -2,12 +2,12 @@ from collections.abc import Callable
 from ipaddress import IPv4Address
 from typing import Any
 
-from bitstring import BitStream, ConstBitStream
+from bitstring import ConstBitStream
 
-from bitstructures.base.codec import BitsInt, Codec, Container, Stack, Value, StackV
+from bitstructures.base.codec import BitsInt, Codec, Container, StackV, Value
 from bitstructures.exceptions import CTypeError, InitError
 from bitstructures.helpers import bitshift
-from bitstructures.typing import FunctType
+from bitstructures.typing import ExpType
 
 # ---------------- Base Adapter ----------------
 
@@ -45,7 +45,7 @@ class IpAddress(Adapter):
     def decode(self, value: int, parent: StackV) -> str:  # noqa: ARG002
         return str(IPv4Address(value))
 
-    def encode(self, value: str, parent: StackV) -> int:
+    def encode(self, value: str, parent: StackV) -> int:  # noqa: ARG002
         return int(IPv4Address(value))
 
 
@@ -62,12 +62,12 @@ class Scaler(Adapter):
     def decode(self, value: float, parent: StackV) -> float:  # noqa: ARG002
         return value * self._factor
 
-    def encode(self, value: float, parent: StackV) -> float:
+    def encode(self, value: float, parent: StackV) -> float:  # noqa: ARG002
         return int(value / self._factor)
 
 
 class ExprAdapter(Adapter):
-    def __init__(self, subcodec: Codec, encoder: FunctType, decoder: FunctType) -> None:
+    def __init__(self, subcodec: Codec, encoder: ExpType, decoder: ExpType) -> None:
         super().__init__(subcodec)
         if not callable(encoder):
             raise InitError(
@@ -78,10 +78,10 @@ class ExprAdapter(Adapter):
         self._encode = encoder
         self._decode = decoder
 
-    def decode(self, value: float, parent: StackV) -> float:
+    def decode(self, value: Any, parent: StackV) -> Any:  # noqa: ARG002
         return self._encode(value)
 
-    def encode(self, value: float, parent: StackV) -> float:
+    def encode(self, value: Any, parent: StackV) -> Any:  # noqa: ARG002
         return self._decode(value)
 
 
@@ -114,9 +114,9 @@ class Bitshift(Codec):
 
     def __init__(
         self,
-        funct: Callable[[Container, Any], int] = bitshift,
-        *args,
-        **kwargs,
+        funct: Callable[[StackV, Any], int] = bitshift,
+        *args: Any,
+        **kwargs: Any,
     ) -> None:
         super().__init__()
         self._funct = funct
