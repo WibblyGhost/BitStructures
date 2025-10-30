@@ -1,7 +1,7 @@
 from bitstructures.base.codec import Container
 
 
-def bitshift(packet: Container, field_name: str, msb: bool = False) -> int:
+def bitshift(packet: Container[int], field_name: str, msb: bool = False) -> int:
     """
     Works on LSB calculations by default
     Join two bitshifted ingeters by appending the second integer

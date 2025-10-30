@@ -14,7 +14,7 @@ from math import ceil
 from bitstructures import (
     BitsInt,
     Const,
-    Enum,
+    Enumerate,
     ExprAdapter,
     Flag,
     IpAddress,
@@ -23,11 +23,13 @@ from bitstructures import (
     Struct,
     Switch,
 )
+from bitstructures.base.codec import Codec, GreedyBits
 
 IPV4_HEADER = Struct(
     "version" / Const(BitsInt(4), const=4),
     "header_length"
     / ExprAdapter(
+        # Indicates the length of the header in 32-bit words (minimum is 5, which equals 20 bytes).
         BitsInt(4),
         encoder=lambda obj: obj * 4,
         decoder=lambda obj: ceil(obj / 4),
@@ -49,7 +51,7 @@ IPV4_HEADER = Struct(
     "fragment_offset" / BitsInt(13),
     "ttl" / BitsInt(8),
     "protocol"
-    / Enum(
+    / Enumerate(
         8,
         ICMP=1,
         TCP=6,
@@ -66,7 +68,7 @@ TCP_HEADER = Struct(
     "destination_port" / BitsInt(16),
     "seq" / BitsInt(32),
     "ack" / BitsInt(32),
-    "header_length"
+    "length"
     / ExprAdapter(
         BitsInt(4),
         encoder=lambda obj: obj * 4,
@@ -89,19 +91,16 @@ TCP_HEADER = Struct(
     "window" / BitsInt(16),
     "checksum" / BitsInt(16),
     "urgent" / BitsInt(16),
-    "options" / Optional(BitsInt(lambda packet: packet.header_length - 20)),
+    "options" / Optional(BitsInt(lambda packet: packet.length - 20)),
     embedded=False,
 )
 
 UDP_HEADER = Struct(
     "source_port" / BitsInt(16),
     "destination_port" / BitsInt(16),
-    "payload_length"
-    / ExprAdapter(
-        BitsInt(16),
-        encoder=lambda obj: obj + 8,
-        decoder=lambda obj: obj - 8,
-    ),
+    # Indicates the total length of the UDP header plus the payload.
+    # The minimum value for this field is 8 (the header size), as there is always a header present.
+    "length" / BitsInt(16),
     "checksum" / BitsInt(16),
     embedded=False,
 )
@@ -110,20 +109,24 @@ UDP_HEADER = Struct(
 # IP/UDP packet used for basic packet data tests, not in spec
 IP_PACKET = Struct(
     IPV4_HEADER,
-    "header" / Switch(lambda packet: packet.protocol, {"UDP": UDP_HEADER, "TCP": TCP_HEADER}),
-    # "payload" / GreedyBits(),
+    "header"
+    / Switch[str, Codec](lambda packet: packet.protocol, {"UDP": UDP_HEADER, "TCP": TCP_HEADER}),
+    "payload" / GreedyBits(),
 )
 
 
 if __name__ == "__main__":
     from scapy.layers.inet import IP, UDP
 
-    ip = IP(src="127.0.0.1", dst="8.8.8.8") / UDP(dport=53)
+    ip = IP(src="127.0.0.1", dst="8.8.8.8") / UDP(dport=53) / b"test_packet"
     ip_data = ip.build()
-    print(len(ip_data))
+    print(f"IP: {ip_data!r}")
     stack = IP_PACKET.parse(ip_data)
     print(f"DECODED:\n{stack.pprint()}")
     container = stack.to_container()
     print(f"Container:\n{container!s}")
     raw = IP_PACKET.build(container)
     print(f"RAW:\n{raw!r}")
+    print(f"{raw == ip_data=}")
+
+    print(IP_PACKET.pprint())

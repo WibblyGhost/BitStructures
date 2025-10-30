@@ -1,4 +1,3 @@
-from collections.abc import Callable
 from ipaddress import IPv4Address
 from typing import Any
 
@@ -7,7 +6,7 @@ from bitstring import ConstBitStream
 from bitstructures.base.codec import BitsInt, Codec, Container, StackV, Value
 from bitstructures.exceptions import CTypeError, InitError
 from bitstructures.helpers import bitshift
-from bitstructures.typing import ExpType
+from bitstructures.typing import ExpType, FunctType
 
 # ---------------- Base Adapter ----------------
 
@@ -31,11 +30,15 @@ class Adapter(Codec):
 
     def decode(self, value: Any, parent: StackV) -> Any:
         """Override these method in the subclasses"""
-        raise NotImplementedError("Must be derived in a subclass")
+        raise NotImplementedError(
+            f"The function decode must be derived in a subclass {self.__class__.__name__}"
+        )
 
     def encode(self, value: Any, parent: StackV) -> Any:
         """Override these method in the subclasses"""
-        raise NotImplementedError("Must be derived in a subclass")
+        raise NotImplementedError(
+            f"The function endecode must be derived in a subclass {self.__class__.__name__}"
+        )
 
 
 # ---------------- Adapters ----------------
@@ -89,20 +92,19 @@ class ExprAdapter(Adapter):
 
 
 class Computed(Codec):
-    def __init__(
-        self, function: Callable[[Container], Container], *args: Any, **kwargs: Any
-    ) -> None:
+    def __init__(self, function: FunctType, *args: Any, **kwargs: Any) -> None:
         super().__init__()
         self.function = function
         self.args = args
         self.kwargs = kwargs
 
-    def io_parse(self, io: ConstBitStream, parent: StackV) -> None:
-        container = super().io_parse(io, parent)
-        return self.function(container, *self.args, **self.kwargs)
 
-    def io_build(self, parent: StackV, container: Container) -> None:  # noqa: ARG002
-        return
+# def io_parse(self, io: ConstBitStream, parent: StackV) -> None:
+#     container = super().io_parse(io, parent)
+#     return self.function(container, *self.args, **self.kwargs)
+
+# def io_build(self, parent: StackV, container: Container) -> None:
+#     return
 
 
 class Bitshift(Codec):
@@ -114,7 +116,7 @@ class Bitshift(Codec):
 
     def __init__(
         self,
-        funct: Callable[[StackV, Any], int] = bitshift,
+        funct: FunctType = bitshift,
         *args: Any,
         **kwargs: Any,
     ) -> None:
@@ -123,10 +125,11 @@ class Bitshift(Codec):
         self._args = args
         self._kwargs = kwargs
 
-    def io_build(self, parent: StackV, container: Container) -> None:
-        """The bitshift doesn't get built through this Codes and must be done beforehand"""
 
-    def io_parse(self, io: ConstBitStream, parent: StackV) -> None:  # noqa: ARG002
-        bitshifted = self._funct(parent, *self._args, **self._kwargs)
-        parent[self.name] = bitshifted
-        return parent
+# def io_build(self, parent: StackV, container: Container) -> None:
+#     """The bitshift doesn't get built through this Codes and must be done beforehand"""
+
+# def io_parse(self, io: ConstBitStream, parent: StackV) -> None:
+#     bitshifted = self._funct(parent, *self._args, **self._kwargs)
+#     parent[self.name] = bitshifted
+#     return parent

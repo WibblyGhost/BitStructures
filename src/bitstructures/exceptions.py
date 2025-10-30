@@ -18,6 +18,15 @@ class InitError(CodecError): ...
 class SizeError(CodecError): ...
 
 
+class ChecksumError(CodecError): ...
+
+
+class BlacklistError(CodecError): ...
+
+
+class WhitelistError(CodecError): ...
+
+
 class ParseError(CodecError):
     def __init__(
         self, parent: "StackV", subcodec: "Codec", peek: ConstBitStream, *args: object
@@ -31,11 +40,11 @@ class ParseError(CodecError):
 
 class BuildError(CodecError):
     def __init__(
-        self, parent: "StackV", subcodec: "Codec", container: "Container", *args: object
+        self, parent: "StackV", codec: "Codec", container: "Container", *args: object
     ) -> None:
         super().__init__(*args)
         self.add_note(f"Parent Stack:\n{parent.pprint()}")
-        self.add_note(f"Subcodec: {subcodec}")
+        self.add_note(f"Subcodec: {codec.pprint()}")
         self.add_note(f"Container: {container}")
 
 
@@ -46,9 +55,6 @@ class TriggeredError(CodecError): ...
 
 
 class ConstantError(CodecError): ...
-
-
-class RDivError(CodecError): ...
 
 
 class FrozenError(CodecError): ...
