@@ -1,10 +1,10 @@
 from ipaddress import IPv4Address
-from typing import Any
+from typing import Any, override
 
 from bitstring import ConstBitStream
 
 from bitstructures.base.codec import BitsInt, Codec, Container, StackV, Value
-from bitstructures.exceptions import CTypeError, InitError
+from bitstructures.exceptions import InitError
 from bitstructures.helpers import bitshift
 from bitstructures.typing import ExpType, FunctType
 
@@ -12,29 +12,32 @@ from bitstructures.typing import ExpType, FunctType
 
 
 class Adapter(Codec):
+    @override
     def __init__(self, subcodec: Codec) -> None:
         super().__init__(subcodec)
 
-    def io_parse(self, io: ConstBitStream, parent: StackV) -> None:
-        self.subcodec.io_parse(io, parent)
+    @override
+    def io_parse(self, parent: StackV, io: ConstBitStream) -> None:
+        self.subcodec.io_parse(parent, io)
         sn, value = parent.get(self.subcodec.name)
-        parent.set(sn, Value(value.name, self.decode(value.v_item, parent), value.size))
+        parent.set(sn, Value(value.name, self.decode(parent, value.v_item), value.size))
 
+    @override
     def io_build(self, parent: StackV, container: Container) -> None:
         c_value = container[self.name]
-        encoded = self.encode(c_value, parent)
-        container[self.name] = encoded
+        encoded = self.encode(parent, c_value)
+        container.set(self.name, encoded, ignore_frozen=True)
         self.subcodec.io_build(parent, container)
 
     # ---- OVERRIDE ----
 
-    def decode(self, value: Any, parent: StackV) -> Any:
+    def decode(self, parent: StackV, value: Any) -> Any:
         """Override these method in the subclasses"""
         raise NotImplementedError(
             f"The function decode must be derived in a subclass {self.__class__.__name__}"
         )
 
-    def encode(self, value: Any, parent: StackV) -> Any:
+    def encode(self, parent: StackV, value: Any) -> Any:
         """Override these method in the subclasses"""
         raise NotImplementedError(
             f"The function endecode must be derived in a subclass {self.__class__.__name__}"
@@ -45,31 +48,37 @@ class Adapter(Codec):
 
 
 class IpAddress(Adapter):
-    def decode(self, value: int, parent: StackV) -> str:  # noqa: ARG002
+    @override
+    def decode(self, parent: StackV, value: int) -> str:
         return str(IPv4Address(value))
 
-    def encode(self, value: str, parent: StackV) -> int:  # noqa: ARG002
+    @override
+    def encode(self, parent: StackV, value: str) -> int:
         return int(IPv4Address(value))
 
 
 class Scaler(Adapter):
+    @override
     def __init__(self, subcodec: Codec, /, factor: float) -> None:
         if not isinstance(subcodec, BitsInt):
-            raise CTypeError(
+            raise TypeError(
                 f"{self.__class__.__name__} adapter only support integer {Codec.__name__}'s, "
                 f"got {type(subcodec)}"
             )
         super().__init__(subcodec)
         self._factor = factor
 
-    def decode(self, value: float, parent: StackV) -> float:  # noqa: ARG002
+    @override
+    def decode(self, parent: StackV, value: float) -> float:
         return value * self._factor
 
-    def encode(self, value: float, parent: StackV) -> float:  # noqa: ARG002
+    @override
+    def encode(self, parent: StackV, value: float) -> float:
         return int(value / self._factor)
 
 
 class ExprAdapter(Adapter):
+    @override
     def __init__(self, subcodec: Codec, encoder: ExpType, decoder: ExpType) -> None:
         super().__init__(subcodec)
         if not callable(encoder):
@@ -81,10 +90,12 @@ class ExprAdapter(Adapter):
         self._encode = encoder
         self._decode = decoder
 
-    def decode(self, value: Any, parent: StackV) -> Any:  # noqa: ARG002
+    @override
+    def decode(self, parent: StackV, value: Any) -> Any:
         return self._encode(value)
 
-    def encode(self, value: Any, parent: StackV) -> Any:  # noqa: ARG002
+    @override
+    def encode(self, parent: StackV, value: Any) -> Any:
         return self._decode(value)
 
 
@@ -92,17 +103,20 @@ class ExprAdapter(Adapter):
 
 
 class Computed(Codec):
-    def __init__(self, function: FunctType, *args: Any, **kwargs: Any) -> None:
+    @override
+    def __init__(self, function: FunctType[int], *args: Any, **kwargs: Any) -> None:
         super().__init__()
         self.function = function
         self.args = args
         self.kwargs = kwargs
 
 
-# def io_parse(self, io: ConstBitStream, parent: StackV) -> None:
-#     container = super().io_parse(io, parent)
+# @override
+# def io_parse(self, parent: StackV, io: ConstBitStream) -> None:
+#     container = super().io_parse(parent, io)
 #     return self.function(container, *self.args, **self.kwargs)
 
+# @override
 # def io_build(self, parent: StackV, container: Container) -> None:
 #     return
 
@@ -114,9 +128,10 @@ class Bitshift(Codec):
     applying a bitshift to combine the two packets
     """
 
+    @override
     def __init__(
         self,
-        funct: FunctType = bitshift,
+        funct: FunctType[int] = bitshift,
         *args: Any,
         **kwargs: Any,
     ) -> None:
@@ -126,10 +141,12 @@ class Bitshift(Codec):
         self._kwargs = kwargs
 
 
+# @override
 # def io_build(self, parent: StackV, container: Container) -> None:
 #     """The bitshift doesn't get built through this Codes and must be done beforehand"""
 
-# def io_parse(self, io: ConstBitStream, parent: StackV) -> None:
+# @override
+# def io_parse(self, parent: StackV, io: ConstBitStream) -> None:
 #     bitshifted = self._funct(parent, *self._args, **self._kwargs)
-#     parent[self.name] = bitshifted
+#     parent.set(self.name, bitshifted, ignore_frozen=True)
 #     return parent

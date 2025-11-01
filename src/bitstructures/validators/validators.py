@@ -1,4 +1,5 @@
 from collections.abc import Iterable
+from typing import override
 
 from bitstring import ConstBitStream
 
@@ -7,18 +8,21 @@ from bitstructures.exceptions import BlacklistError, WhitelistError
 
 
 class Blacklisted(BitsInt):
+    @override
     def __init__(self, size: int, array: Iterable[int]) -> None:
         super().__init__(size)
         self._array = array
 
-    def io_parse(self, io: ConstBitStream, parent: StackV) -> None:
-        value, size = self._read_io(io, parent)
+    @override
+    def io_parse(self, parent: StackV, io: ConstBitStream) -> None:
+        value, size = self._read_io(parent, io)
         if value.uint in self._array:
             raise BlacklistError(
                 f"Cannot parse value {value} as it's listed in the blacklisted values {self._array}"
             )
         parent.push(Value(self.name, value.uint, size))
 
+    @override
     def io_build(self, parent: StackV, container: Container) -> None:
         if (value := container[self.name]) in self._array:
             raise BlacklistError(
@@ -28,12 +32,14 @@ class Blacklisted(BitsInt):
 
 
 class Whitelisted(BitsInt):
+    @override
     def __init__(self, size: int, array: Iterable[int]) -> None:
         super().__init__(size)
         self._array = array
 
-    def io_parse(self, io: ConstBitStream, parent: StackV) -> None:
-        value, size = self._read_io(io, parent)
+    @override
+    def io_parse(self, parent: StackV, io: ConstBitStream) -> None:
+        value, size = self._read_io(parent, io)
         if value.uint not in self._array:
             raise WhitelistError(
                 f"Cannot parse value {value} as it's not "
@@ -42,6 +48,7 @@ class Whitelisted(BitsInt):
 
         parent.push(Value(self.name, value.uint, size))
 
+    @override
     def io_build(self, parent: StackV, container: Container) -> None:
         if (value := container[self.name]) not in self._array:
             raise WhitelistError(
