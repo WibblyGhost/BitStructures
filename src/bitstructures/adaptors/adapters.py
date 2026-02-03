@@ -3,7 +3,7 @@ from typing import Any, override
 
 from bitstring import ConstBitStream
 
-from bitstructures.base.codec import BitsInt, Codec, Container, StackV, Value
+from bitstructures.base.codec import BitsInt, Codec, Container, StackC, StackV, Value
 from bitstructures.exceptions import InitError
 from bitstructures.helpers import bitshift
 from bitstructures.typing import ExpType, FunctType
@@ -17,17 +17,17 @@ class Adapter(Codec):
         super().__init__(subcodec)
 
     @override
-    def io_parse(self, parent: StackV, io: ConstBitStream) -> None:
-        self.subcodec.io_parse(parent, io)
+    def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
+        self.subcodec.io_parse(parent, codecs, io)
         sn, value = parent.get(self.subcodec.name)
         parent.set(sn, Value(value.name, self.decode(parent, value.v_item), value.size))
 
     @override
-    def io_build(self, parent: StackV, container: Container) -> None:
+    def io_build(self, parent: StackV, codecs: StackC, container: Container) -> None:
         c_value = container[self.name]
         encoded = self.encode(parent, c_value)
         container.set(self.name, encoded, ignore_frozen=True)
-        self.subcodec.io_build(parent, container)
+        self.subcodec.io_build(parent, codecs, container)
 
     # ---- OVERRIDE ----
 
@@ -102,13 +102,26 @@ class ExprAdapter(Adapter):
 # ---------------- Computed ----------------
 
 
-class Computed(Codec):
+class Computed[T](Codec):
     @override
-    def __init__(self, function: FunctType[int], *args: Any, **kwargs: Any) -> None:
+    def __init__(self, function: FunctType[T], *args: Any, **kwargs: Any) -> None:
         super().__init__()
         self.function = function
         self.args = args
         self.kwargs = kwargs
+        # NOTE: This is the one of the few class that is allowed a size of 0
+        self._size = 0
+
+    @override
+    def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
+        # NOTE: The computed class doesn't consume the bitstream
+        computed = self.function(parent)
+        parent.push(Value(self.name, computed, 0))
+        codecs.push(self)
+
+    @override
+    def io_build(self, parent: StackV, codecs: StackC, container: Container[Any]) -> None:
+        return
 
 
 # @override

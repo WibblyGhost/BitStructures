@@ -14,7 +14,7 @@ from math import ceil
 from bitstructures import (
     BitsInt,
     Const,
-    Enumerate,
+    Enum,
     ExprAdapter,
     Flag,
     IpAddress,
@@ -42,7 +42,6 @@ IPV4_HEADER = Struct(
         "high_reliability" / Flag(),
         "minimize_cost" / Flag(),
         Padding(1),
-        embedded=False,
     ),
     "total_length" / BitsInt(16),
     "identification" / BitsInt(16),
@@ -51,7 +50,7 @@ IPV4_HEADER = Struct(
     "fragment_offset" / BitsInt(13),
     "ttl" / BitsInt(8),
     "protocol"
-    / Enumerate(
+    / Enum(
         8,
         ICMP=1,
         TCP=6,
@@ -86,13 +85,11 @@ TCP_HEADER = Struct(
         "rst" / Flag(),
         "syn" / Flag(),
         "fin" / Flag(),
-        embedded=False,
     ),
     "window" / BitsInt(16),
     "checksum" / BitsInt(16),
     "urgent" / BitsInt(16),
     "options" / Optional(BitsInt(lambda packet: packet.length - 20)),
-    embedded=False,
 )
 
 UDP_HEADER = Struct(
@@ -102,7 +99,6 @@ UDP_HEADER = Struct(
     # The minimum value for this field is 8 (the header size), as there is always a header present.
     "length" / BitsInt(16),
     "checksum" / BitsInt(16),
-    embedded=False,
 )
 
 
@@ -128,5 +124,3 @@ if __name__ == "__main__":
     raw = IP_PACKET.build(container)
     print(f"RAW:\n{raw!r}")
     print(f"{raw == ip_data=}")
-
-    print(IP_PACKET.pprint())

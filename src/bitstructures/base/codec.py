@@ -3,11 +3,12 @@ from collections.abc import Collection, Generator
 from contextlib import suppress
 from copy import deepcopy
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import Enum as Enum_
 from typing import Any, NoReturn, Self, SupportsIndex, override
 
-from bitstring import BitStream, ConstBitStream, CreationError, ReadError
+from bitstring import Bits, ConstBitStream, CreationError, ReadError
 
+from bitstructures.constants import PP_DETENT, PP_INDENT, PP_TAB
 from bitstructures.exceptions import (
     BuildError,
     CodecError,
@@ -21,13 +22,14 @@ from bitstructures.exceptions import (
     TriggeredError,
 )
 from bitstructures.typing import (
-    ContainerType,
     DefaultType,
     ExpType,
     FunctType,
     IoType,
     ReadIoType,
+    SupportsName,
     WriteIoType,
+    _ContainerType,
 )
 
 # ---------------- Wrappers ----------------
@@ -77,13 +79,15 @@ class Frozen:
 class Value:
     name: str
     v_item: "str | int | EnumBase | ConstBitStream | StackV | list[Value]"
-    size: int = field(default=0, compare=False, hash=False)
+    size: int = field(default=-1, compare=False, hash=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.name, str):
             raise TypeError("Value's name is not of type str")
         if not isinstance(self.size, int):
-            raise TypeError("Value's name is not of type int")
+            raise TypeError("Value's size is not of type int")
+        if self.size < 0:
+            raise SizeError("Value's size cannot be negative")
 
     @property
     def bitstream(self) -> ConstBitStream:
@@ -97,10 +101,10 @@ class Value:
         return f"<{self.name!r}: {self.v_item!s}>"
 
     def __repr__(self) -> str:
-        return f"<{self.name!r}: {self.v_item!s}, size={self.size}>"
+        return f"<{self.name!r}: {self.v_item!s}, size={self.sizeof()}>"
 
     def pprint(self) -> str:
-        return f"{self.name!r:<30} | size={self.size:<2} | {self.v_item!s}"
+        return f"{self.name!r:<30} | size={self.sizeof():<2} | {self.v_item!s}"
 
     def __hash__(self) -> int:
         return hash(self.v_item)
@@ -118,8 +122,13 @@ class Value:
             raise TypeError(f"Cannot perform a int conversion on a {type(self.v_item)}")
         return int(self.v_item)
 
+    def sizeof(self) -> int:
+        if self.size < 0:
+            raise SizeError(f"Value {self.name} doesn't have a size")
+        return self.size
 
-class Container[T: ContainerType = ContainerType](Frozen, UserDict[str, T]):
+
+class Container[T: _ContainerType = _ContainerType](Frozen, UserDict[str, T]):
     def __init__(self, data: dict[str, T] | None = None, **kwargs: T) -> None:
         Frozen.__init__(self)
         UserDict.__init__(self, **kwargs)
@@ -180,10 +189,25 @@ class Container[T: ContainerType = ContainerType](Frozen, UserDict[str, T]):
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.data!r})"
 
+    def pprint(self, *, depth: int = 1) -> str:
+        # RECURSIVE
+        padding = "\t{t}{v:-^38}{t}\n"
+        stack = ""
+        for key, value in self.data.items():
+            container_str = f"{key}: {value}"
+            if isinstance(value, Container):
+                stack += padding.format(t=PP_INDENT * depth, v=key)
+                stack += value.pprint(depth=depth + 1)
+                stack += padding.format(t=PP_DETENT, v="")
+            else:
+                stack += f"\t{PP_TAB * (depth - 1)} {container_str}\n"
+        return stack
 
-class Stack[T: ("Codec", Value)](Frozen):
+
+class Stack[T: SupportsName](Frozen):
     def __init__(self) -> None:
         self._items: list[T] = []
+        self._parent: Stack[T] | None = None
         super().__init__()
 
     def __str__(self) -> str:
@@ -218,6 +242,21 @@ class Stack[T: ("Codec", Value)](Frozen):
         self._validate_item(item)
         self._items.append(item)
 
+    def attach_parent(self, parent: "Stack[T]") -> None:
+        self._parent = parent
+
+    @property
+    def _(self) -> "Stack[T]":
+        """
+        Used to retrieve the parent stack if the structure isn't embedded.
+        | opcode
+        | --|
+            | Switch(lambda packet: packet._.opcode, ...)
+        """
+        if self._parent is None:
+            raise AttributeError("Parent stack was never set, cannot retrieve value")
+        return self._parent
+
     def __contains__(self, key: str) -> bool:
         return key in {item.name for item in self._items}
 
@@ -228,8 +267,27 @@ class Stack[T: ("Codec", Value)](Frozen):
         yield from enumerate(self._items)
 
 
-class StackC(Stack["Codec"]):
+class StackC(Stack["Codec|StackC"]):
     """For use in the Structs"""
+
+    __PRIVATE_NAME = "__StackC"
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.name = self.__PRIVATE_NAME
+
+    def pprint(self, *, depth: int = 1) -> str:
+        # RECURSIVE
+        padding = "\t{t}{v:-^38}{t}\n"
+        stack = ""
+        for item in self:
+            if isinstance(item, StackC):
+                stack += padding.format(t=PP_INDENT * depth, v=f"{item.name}")
+                stack += item.pprint(depth=depth + 1)
+                stack += padding.format(t=PP_DETENT, v="")
+            else:
+                stack += f"\t{PP_TAB * (depth - 1)} {item!s}\n"
+        return stack
 
 
 class StackV(Stack[Value]):
@@ -250,7 +308,7 @@ class StackV(Stack[Value]):
         return item.v_item
 
     def sizeof(self) -> int:
-        return sum(item.size for item in self._items)
+        return sum(item.sizeof() for item in self._items)
 
     def to_container(self) -> Container:
         # RECURSIVE
@@ -283,17 +341,17 @@ class StackV(Stack[Value]):
         size = 0
         for item in self:
             if isinstance(item.v_item, StackV):
-                stack += padding.format(t=">" * depth, v=f"{item.name} {item.size}")
+                stack += padding.format(t=PP_INDENT * depth, v=f"{item.name} {item.sizeof()}")
                 stack += item.v_item.pprint(depth=depth + 1)
-                stack += padding.format(t="<" * depth, v="")
+                stack += padding.format(t=PP_DETENT, v="")
             else:
-                stack += f"\t{item.pprint()}\n"
-            size += item.size
+                stack += f"\t{PP_TAB * (depth - 1)} {item.pprint()}\n"
+            size += item.sizeof()
         return stack
 
     def get_io(self) -> ConstBitStream:
         # RECURSIVE
-        io = BitStream()
+        io = ConstBitStream()
         for item in self:
             if isinstance(item.v_item, StackV):
                 io += item.v_item.get_io()
@@ -317,56 +375,48 @@ class Codec:
         self.size:         Size in bits of this codec
         """
         self._subcodec: Codec | None = subcodec
-        # For use in structs
-        self._subcodec_stack: StackC = StackC()
-        self.initialized: bool = False
-        self.name: str = ""
-        self.size: int | FunctType[int] = subcodec.size if subcodec else 0
+        self._initialized: bool = False
+        self._name: str = ""
+        self._size: int | FunctType[int] = subcodec.size if subcodec else -1
 
     @property
-    def subcodecs(self) -> StackC:
-        return self._subcodec_stack
+    def name(self) -> str:
+        return self._name
 
-    def pprint(self, *, depth: int = 1) -> str:
-        # RECURSIVE
-        padding = "\t{t}{v:-^38}{t}\n"
-        stack = f"\t{self!s}\n"
-        if self._subcodec:
-            stack += self._subcodec.pprint(depth=depth + 1)
-        for subcodec in self.subcodecs:
-            if isinstance(subcodec, Struct):
-                stack += padding.format(t=">" * depth, v=f"{subcodec.name}")
-                stack += subcodec.pprint(depth=depth + 1)
-                stack += padding.format(t="<" * depth, v="")
-            else:
-                stack += subcodec.pprint(depth=depth + 1)
-        return stack
+    @property
+    def size(self) -> int | FunctType[int]:
+        if isinstance(self._size, int):
+            if self._size < 0:
+                raise SizeError(f"{self!r} has a negative size")
+            return self._size
+        return self._size
 
     def _check_initialized(self) -> None:
         """
         Checks if the codec har been given a description/name
         Structs/Padding do not need names so ignore this.
         """
-        if self.initialized and self.name:
+        if self._initialized and self.name:
             return
-        raise InitError(f"{self!s} needs to be initialized with a '|' or '/'")
+        raise InitError(f"{self!s} needs to be initialized with a '/'")
 
     @property
     def subcodec(self) -> "Codec":
         return self._subcodec or self
 
     def __repr__(self) -> str:
-        if isinstance(self.size, int):
-            return f"{self.name!r} / {self.__class__.__name__}({self.size})"
+        if isinstance(self._size, int):
+            return f"{self.name!r} / {self.__class__.__name__}({self._size})"
         return f"{self.name!r} / {self.__class__.__name__}"
 
     def __hash__(self) -> int:
         return hash(self.name)
 
     def rename(self, name: str) -> None:
-        self.name = name
-        self.initialized = True
-        if self._subcodec:  # Uses private subcodec, as this can be None
+        self._name = name
+        self._initialized = True
+        if hasattr(self, "_subcodec") and self._subcodec:
+            # Uses private subcodec, as this can be None
             self._subcodec.rename(name)
 
     def __rtruediv__(self, other: Any) -> Self:
@@ -394,9 +444,9 @@ class Codec:
             )
         raise TypeError(f"Unhandled type {type(other)} for division")
 
-    def sizeof(self, parent: StackV, io: IoType = None) -> int:  # noqa: ARG002
+    def sizeof(self, parent: StackV, codecs: StackC, io: IoType = None) -> int:  # noqa: ARG002
         self._check_initialized()
-        size: int = self.size(parent) if callable(self.size) else self.size
+        size: int = self._size(parent) if callable(self._size) else self._size
         if size < 0:  # If size is negative
             raise SizeError(f"Cannot perform a size method on {self.__class__.__name__}, {parent=}")
         return size
@@ -406,7 +456,9 @@ class Codec:
         self._check_initialized()
         return ConstBitStream(raw)
 
-    def _read_io(self, parent: StackV, io: ReadIoType) -> tuple[ConstBitStream, int]:
+    def _read_io(
+        self, parent: StackV, codecs: StackC, io: ReadIoType
+    ) -> tuple[ConstBitStream, int]:
         """
         Handles the reading of the ConstBitStream's IO, raises a parsing error
         if it failed to read.
@@ -415,19 +467,19 @@ class Codec:
         """
         peek: ConstBitStream | None = None
         self._check_initialized()
-        size = self.sizeof(parent, io)
+        size = self.sizeof(parent, codecs, io)
         try:
             peek = io.peek(size)
             return ConstBitStream(io.read(size)), size
         except ReadError as err:
             raise ParseError(
                 parent,
-                self.subcodec,
+                codecs,
                 peek or io,
                 "Ran into an error reading ConstBitStream",
             ) from err
 
-    def io_parse(self, parent: StackV, io: ConstBitStream) -> None:
+    def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
         """
         Not called externally, only via this module.
 
@@ -441,6 +493,7 @@ class Codec:
     def _write_io(
         self,
         parent: StackV,
+        codecs: StackC,
         name: str,
         value: WriteIoType,
     ) -> None:
@@ -460,9 +513,9 @@ class Codec:
             value = value.value
 
         if isinstance(value, ConstBitStream):
-            length = self.sizeof(parent, value)
+            length = self.sizeof(parent, codecs, value)
         else:
-            length = self.sizeof(parent, None)
+            length = self.sizeof(parent, codecs, None)
 
         if length == 0:
             return
@@ -470,27 +523,29 @@ class Codec:
             if length > value.length:
                 raise BuildError(
                     parent,
-                    self,
+                    codecs,
                     Container({"value": value}),
                     "Ran into an error writing ConstBitStream",
                 ) from SizeError(
-                    f"Cannot pack a BitStream of length {value.length} into {length} bits"
+                    f"Cannot pack a ConstBitStream of length {value.length} into {length} bits"
                 )
             io = value
             parent.push(Value(name, io, len(io)))
+            codecs.push(self)
         else:
             try:
                 io = ConstBitStream(uint=value, length=length)
                 parent.push(Value(name, io, len(io)))
+                codecs.push(self)
             except (CreationError, CodecError) as err:
                 raise BuildError(
                     parent,
-                    self,
+                    codecs,
                     Container({"value": value}),
                     "Ran into an error writing ConstBitStream",
                 ) from err
 
-    def io_build(self, parent: StackV, container: Container) -> None:
+    def io_build(self, parent: StackV, codecs: StackC, container: Container) -> None:
         """
         Not called externally, only via this module.
 
@@ -514,6 +569,12 @@ class Struct(Codec):
     )
     """
 
+    __PRIVATE_NAME = "__struct"
+
+    @property
+    def subcodecs(self) -> Stack[Codec]:
+        return self._subcodec_stack
+
     def _check_subcodec_type(self, *args: Any) -> None:
         for arg in args:
             if not issubclass(arg.__class__, Codec):
@@ -525,21 +586,24 @@ class Struct(Codec):
 
     @override
     def __repr__(self) -> str:
-        if isinstance(self.size, int):
-            return f"{self.name} / {self.__class__.__name__}({self.size}, {self.embedded=})"
+        if isinstance(self._size, int):
+            return f"{self.name} / {self.__class__.__name__}({self._size}, {self.embedded=})"
         return f"{self.name} / {self.__class__.__name__}({self.embedded=})"
 
     @override
-    def __init__(self, *args: Any, embedded: bool = True) -> None:
+    def __init__(self, *args: Any, embedded: bool = False) -> None:
+        self._subcodec_stack: Stack[Codec] = Stack[Codec]()
         super().__init__()
         self._check_subcodec_type(*args)
-        self.name = "__struct"
+        self._name = self.__PRIVATE_NAME  # Default name for a struct without a describer
         self.embedded = embedded
+        # NOTE: This is the one of the few class that is allowed a size of 0
+        self._size = 0
 
     @override
     def _check_initialized(self) -> None:
         """
-        Checks if the codec har been given a description/name
+        Checks if the codec has been given a description/name
         Structs/Padding do not need names so ignore this.
         """
         return
@@ -557,9 +621,10 @@ class Struct(Codec):
                 f"Parse only accepts a argument with type {bytes.__name__}, got {type(raw)}"
             )
         parent = StackV()
+        codecs = StackC()
         try:
             io = self._parse_io(raw)
-            self.io_parse(parent, io)
+            self.io_parse(parent, codecs, io)
             parent.set_frozen()
             if parent.empty():
                 raise StackError(parent, self, io, "Parsed stack is empty")
@@ -571,39 +636,74 @@ class Struct(Codec):
                 )
             return parent
         except Exception as err:  # noqa: BLE001
-            if not issubclass(err.__class__, CodecError):
-                err = CodecError(err)
             errors: list[Exception] = [err]
             if not isinstance(err, ParseError):
-                errors.append(ParseError(parent, self, io, repr(err), raw=raw))
-            raise ExceptionGroup(
-                f"{self!s}: Unknown parse error occured",
+                errors.append(ParseError(parent, codecs, io, repr(err), raw=raw))
+            exe_grp = ExceptionGroup(
+                f"{self!s}: Unknown parse errors occured",
                 errors,
             )
+            exe_grp.add_note(f"Raw:\n{raw!r}")
+            raise exe_grp from None
 
     @override
-    def io_parse(self, parent: StackV, io: ConstBitStream) -> None:
-        stack = parent if self.embedded else StackV()
+    def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
+        if self.name == self.__PRIVATE_NAME:
+            # Force this class to be embedded if it hasn't been assigned a descriptor
+            # E.g. When assigning a Struct to a variable
+            self.embedded = True
+
+        # Embedding structs
+        if not self.embedded:
+            stack = StackV()
+            if parent:
+                # Used for indexing parent packets in lambdas
+                stack.attach_parent(parent)
+            codec_stack = StackC()
+            codec_stack.name = self.name
+        else:
+            stack = parent
+            codec_stack = codecs
+
         for subcodec in self.subcodecs:
-            subcodec.io_parse(stack, io)
+            subcodec.io_parse(stack, codec_stack, io)
 
         if not self.embedded:
             parent.push(Value(self.name, stack, size=stack.sizeof()))
+            codecs.push(codec_stack)
 
     @override
-    def io_build(self, parent: StackV, container: Container) -> None:
+    def io_build(self, parent: StackV, codecs: StackC, container: Container) -> None:
+        if self.name == self.__PRIVATE_NAME:
+            # Force this class to be embedded if it hasn't been assigned a descriptor
+            # E.g. When assigning a Struct to a variable
+            self.embedded = True
         container = container if self.embedded else container[self.name]
-        stack = parent if self.embedded else StackV()
+
+        # Embedding structs
+        if not self.embedded:
+            stack = StackV()
+            if parent:
+                # Used for indexing parent packets in lambdas
+                stack.attach_parent(parent)
+            codec_stack = StackC()
+            codec_stack.name = self.name
+        else:
+            stack = parent
+            codec_stack = codecs
         post_build = None
+
+        # Checksums
         for subcodec in self.subcodecs:
             if isinstance(subcodec, Checksum):
                 post_build = subcodec.post_build
-            subcodec.io_build(stack, container)
+            subcodec.io_build(stack, codec_stack, container)
         if post_build:  # For use in checksums
             post_build(stack)
 
         if not self.embedded:
             parent.push(Value(self.name, stack, size=stack.sizeof()))
+            codecs.push(codec_stack)
 
     def build(self, container: Container) -> bytes:
         """
@@ -619,9 +719,10 @@ class Struct(Codec):
                 f"got {type(container)}"
             )
         parent = StackV()
+        codecs = StackC()
         container_ = container.copy()  # Don't modify the current Container
         try:
-            self.io_build(parent, container_)
+            self.io_build(parent, codecs, container_)
             io = parent.get_io()
             if len(io) % 8 != 0:
                 raise SizeError(
@@ -633,11 +734,81 @@ class Struct(Codec):
                 err = CodecError(err)
             errors: list[Exception] = [err]
             if not isinstance(err, BuildError):
-                errors.append(BuildError(parent, self, container_, repr(err)))
-            raise ExceptionGroup(
+                errors.append(BuildError(parent, codecs, container_, repr(err)))
+
+            exe_grp = ExceptionGroup(
                 f"{self!s}: Unknown build error occured",
                 errors,
             )
+            exe_grp.add_note(f"Container:\n{container.pprint()}")
+            raise exe_grp from None
+
+    def sizeof(
+        self, parent: StackV, codecs: StackC, io: Bits | ConstBitStream | None = None
+    ) -> int:
+        if isinstance(self.size, int) and self.size > 0:
+            return self.size
+        return super().sizeof(parent, codecs, io)
+
+
+class Pointer(Struct):
+    """
+    Allows you to look ahead of the current position and parse content later on.
+    This is very useful if you have a field that relies on data later in the packet.
+
+    # Move the stream ahead 8 bits then parse the id, then revert
+    >>> Pointer(
+        --> Pointer starts reading at 8 bits
+        ("source_id" / SOURCE_ID,),  # Start Codec
+        <-- Pointer resumes stream here at 16 bits -> pos at 0 bits
+        ("mfid" / MANUFACTURER_ID,),  # End Codec
+        NOTE: Must consume all remaining bits that were skipped
+        start=8,
+        end=16
+    )
+    """
+
+    @override
+    def __init__(
+        self,
+        start_codec: tuple[Codec],
+        end_codec: tuple[Codec],
+        /,
+        *,
+        start: int,
+        end: int,
+        embedded: bool = False,
+    ) -> None:
+        self._start = start
+        self._end = end
+        self._start_codec = start_codec
+        self._end_codec = end_codec
+        super().__init__(*start_codec, *end_codec, embedded=embedded)
+
+    @override
+    def sizeof(self, parent: StackV, codecs: StackC, io: IoType = None) -> int:
+        return self._end
+
+    @override
+    def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
+        """This IO parse method doesn't consume the IO stream, we just *peek* at the stream"""
+        try:
+            start = io.read(self._start)
+            end = io.read(self._end - self._start)
+            swapped_io = ConstBitStream(end + start)
+        except ReadError as err:
+            raise ParseError(
+                parent,
+                codecs,
+                io,
+                "Ran into an error reading ConstBitStream",
+            ) from err
+        super().io_parse(parent, codecs, swapped_io)
+
+    @override
+    def io_build(self, parent: StackV, codecs: StackC, container: Container) -> None:
+        for codec in (*self._end_codec, *self._start_codec):
+            codec.io_build(parent, codecs, container)
 
 
 # ---------------- Error Handlers ----------------
@@ -646,9 +817,11 @@ class Struct(Codec):
 class _Pass(Codec, metaclass=Singleton):
     """Declarer that this Codec *shouldn't* error when it fails to map"""
 
+    __PRIVATE_NAME = "__pass"
+
     @override
     def __init__(self) -> None:
-        self.name = "__pass"
+        self._name = self.__PRIVATE_NAME
 
     @override
     def __rtruediv__(self, other: Any) -> Self:
@@ -661,11 +834,11 @@ class _Pass(Codec, metaclass=Singleton):
         return 0
 
     @override
-    def io_build(self, parent: StackV, container: Container) -> None:
+    def io_build(self, parent: StackV, codecs: StackC, container: Container) -> None:
         pass
 
     @override
-    def io_parse(self, parent: StackV, io: ConstBitStream) -> None:
+    def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
         pass
 
 
@@ -675,9 +848,11 @@ Pass = _Pass()
 class _Error(Codec, metaclass=Singleton):
     """Declarer that this Codec *should* error when it fails to map"""
 
+    __PRIVATE_NAME = "__error"
+
     @override
     def __init__(self) -> None:
-        self.name = "__error"
+        self._name = self.__PRIVATE_NAME
 
     @override
     def __rtruediv__(self, other: Any) -> Self:
@@ -690,16 +865,21 @@ class _Error(Codec, metaclass=Singleton):
         return 0
 
     @override
-    def io_build(self, parent: StackV, container: Container) -> None:
-        self.raise_error()
+    def io_build(self, parent: StackV, codecs: StackC, container: Container) -> None:
+        self.raise_error(parent, codecs, container=container)
 
     @override
-    def io_parse(self, parent: StackV, io: ConstBitStream) -> None:
-        self.raise_error()
+    def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
+        self.raise_error(parent, codecs, io=io)
 
     @classmethod
-    def raise_error(cls) -> NoReturn:
-        raise TriggeredError("This error was triggered via a default set to Error")
+    def raise_error(cls, parent: StackV, codecs: StackC, **kwargs: Any) -> NoReturn:
+        raise TriggeredError(
+            "This error was triggered via a default set to Error",
+            parent,
+            codecs,
+            **kwargs,
+        )
 
 
 Error = _Error()
@@ -720,14 +900,14 @@ class RawBits(Codec):
     @override
     def __init__(self, size: int) -> None:
         super().__init__()
-        self.size = size
+        self._size = size
 
     @override
-    def io_parse(self, parent: StackV, io: ConstBitStream) -> None:
+    def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
         raise NotImplementedError(self.__class__.__name__)
 
     @override
-    def io_build(self, parent: StackV, container: Container) -> None:
+    def io_build(self, parent: StackV, codecs: StackC, container: Container) -> None:
         raise NotImplementedError(self.__class__.__name__)
 
 
@@ -740,11 +920,13 @@ class Padding(Codec):
     >>> Padding(4, padding=0b0101)
     """
 
+    __PRIVATE_NAME = "__padding"
+
     @override
-    def __init__(self, size: int, /, pattern: int = 0b1) -> None:
+    def __init__(self, size: int, /, *, pattern: int = 0b0) -> None:
         super().__init__()
-        self.name = "__padding"
-        self.size = size
+        self._name = self.__PRIVATE_NAME
+        self._size = size
         self._pattern = pattern
 
     @override
@@ -756,21 +938,23 @@ class Padding(Codec):
         return
 
     @override
-    def io_parse(self, parent: StackV, io: ConstBitStream) -> None:
-        _, size = self._read_io(parent, io)
+    def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
+        _, size = self._read_io(parent, codecs, io)
         parent.push(Value(self.name, ConstBitStream(length=size), size))
+        codecs.push(self)
 
     @override
-    def io_build(self, parent: StackV, container: Container) -> None:
-        size = self.sizeof(parent)
+    def io_build(self, parent: StackV, codecs: StackC, container: Container) -> None:
+        size = self.sizeof(parent, codecs)
         binary = ConstBitStream(bin(self._pattern))
         while len(binary) < size:
             binary += binary
             if len(binary) > size:
                 raise SizeError(
-                    f"Defined pattern {binary.bin:b} couldn't be repeated to fit size {size}"
+                    f"Defined pattern {binary.bin!s} ({len(binary.bin)} bits) "
+                    f"couldn't be repeated within {size} bits"
                 )
-        self._write_io(parent, self.name, binary)
+        self._write_io(parent, codecs, self.name, binary)
 
 
 class BitsInt(Codec):
@@ -784,26 +968,27 @@ class BitsInt(Codec):
     @override
     def __init__(self, size: int | FunctType[int]) -> None:
         super().__init__()
-        self.size = size
+        self._size = size
 
     @override
-    def io_parse(self, parent: StackV, io: ConstBitStream) -> None:
-        value, size = self._read_io(parent, io)
+    def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
+        value, size = self._read_io(parent, codecs, io)
         parent.push(Value(self.name, value.uint, size))
+        codecs.push(self)
 
     @override
-    def io_build(self, parent: StackV, container: Container) -> None:
+    def io_build(self, parent: StackV, codecs: StackC, container: Container) -> None:
         if self.name not in container:
             raise BuildError(
                 parent,
-                self,
+                codecs,
                 container,
                 f"Name {self.name} wasn't found in the container",
             )
-        self._write_io(parent, self.name, container[self.name])
+        self._write_io(parent, codecs, self.name, container[self.name])
 
 
-class EnumBase(Enum):
+class EnumBase(Enum_):
     """Basic override for the Enum object to change string representations"""
 
     @override
@@ -825,9 +1010,9 @@ class EnumBase(Enum):
         return hash(self.name)
 
 
-class Enumerate(BitsInt):
+class Enum(BitsInt):
     """
-    >>> "protocol" / Enumerate(
+    >>> "protocol" / Enum(
         8,
         ICMP=1,
         TCP=6,
@@ -853,30 +1038,30 @@ class Enumerate(BitsInt):
         return self._enum
 
     @override
-    def io_parse(self, parent: StackV, io: ConstBitStream) -> None:
-        peek = io.peek(self.sizeof(parent, io))
-        super().io_parse(parent, io)
+    def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
+        peek = io.peek(self.sizeof(parent, codecs, io))
+        super().io_parse(parent, codecs, io)
 
         sn, value = parent.get(self.name)
         enum_value = value.v_item
         if enum_value in self.enum:  # type: ignore[operator]
-            parent.set(sn, Value(value.name, self.enum(enum_value), value.size))  # type: ignore[operator]
+            parent.set(sn, Value(value.name, self.enum(enum_value), value.sizeof()))  # type: ignore[operator]
             return
         if enum_value in self.enum._value2member_map_:  # type: ignore[attr-defined]
-            parent.set(sn, Value(value.name, self.enum[enum_value], value.size))  # type: ignore[index]
+            parent.set(sn, Value(value.name, self.enum[enum_value], value.sizeof()))  # type: ignore[index]
         if self._default.__class__ is _Pass:
             return
         if self._default.__class__ is _Error:
-            Error.raise_error()
+            Error.raise_error(parent, codecs, key=enum_value)
         raise ParseError(
             parent,
-            self,
+            codecs,
             peek,
             f"Value {value} wasn't a valid enum, {self._enum!r}",
         )
 
     @override
-    def io_build(self, parent: StackV, container: Container) -> None:
+    def io_build(self, parent: StackV, codecs: StackC, container: Container) -> None:
         enum = container[self.name]
         if not isinstance(enum, EnumBase):
             # Just checking if the value is a valid enum
@@ -887,10 +1072,27 @@ class Enumerate(BitsInt):
                     container.set(self.name, self._enum[enum], ignore_frozen=True)  # type: ignore[index]
                 except KeyError:
                     if self._default.__class__ is _Error:
-                        Error.raise_error()
+                        Error.raise_error(parent, codecs, container=container)
                     # It's just an integer/value, this is a _Pass condition
                     container.set(self.name, enum, ignore_frozen=True)
-        super().io_build(parent, container)
+        super().io_build(parent, codecs, container)
+
+
+class Mapping(Enum):
+    @override
+    def __init__(
+        self,
+        size: int | FunctType[int],
+        map: dict[str, int | str],
+        *,
+        default: DefaultType = Error,
+    ) -> None:
+        super().__init__(size, default=default, **map)
+
+    def sizeof(
+        self, parent: StackV, codecs: StackC, io: Bits | ConstBitStream | None = None
+    ) -> int:
+        return super().sizeof(parent, codecs, io)
 
 
 class Flag(BitsInt):
@@ -903,9 +1105,10 @@ class Flag(BitsInt):
         super().__init__(size=1)
 
     @override
-    def io_parse(self, parent: StackV, io: ConstBitStream) -> None:
-        value, size = self._read_io(parent, io)
+    def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
+        value, size = self._read_io(parent, codecs, io)
         parent.push(Value(self.name, value.uint == 1, size))
+        codecs.push(self)
 
 
 class Const(Codec):
@@ -919,17 +1122,17 @@ class Const(Codec):
         self.constant = const
 
     @override
-    def io_parse(self, parent: StackV, io: ConstBitStream) -> None:
-        self.subcodec.io_parse(parent, io)
+    def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
+        self.subcodec.io_parse(parent, codecs, io)
         _sn, value = parent.get(self.name)
         if value.v_item != self.constant:
             raise ConstantError(f"Was expecting the value {self.constant} but got {value}")
 
     @override
-    def io_build(self, parent: StackV, container: Container) -> None:
+    def io_build(self, parent: StackV, codecs: StackC, container: Container) -> None:
         if self.name in container and (value := container[self.name]) != self.constant:
             raise ConstantError(f"Was expecting the value {self.constant} but got {value}")
-        self.subcodec.io_build(parent, container)
+        self.subcodec.io_build(parent, codecs, container)
 
 
 class Default(Codec):
@@ -943,14 +1146,14 @@ class Default(Codec):
         self.default = default
 
     @override
-    def io_parse(self, parent: StackV, io: ConstBitStream) -> None:
-        self.subcodec.io_parse(parent, io)
+    def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
+        self.subcodec.io_parse(parent, codecs, io)
 
     @override
-    def io_build(self, parent: StackV, container: Container) -> None:
+    def io_build(self, parent: StackV, codecs: StackC, container: Container) -> None:
         if self.name not in container:
             container.set(self.name, self.default, ignore_frozen=True)
-        super().io_build(parent, container)
+        self.subcodec.io_build(parent, codecs, container)
 
 
 class Array(Codec):
@@ -973,16 +1176,17 @@ class Array(Codec):
         return self._count
 
     @override
-    def io_parse(self, parent: StackV, io: ConstBitStream) -> None:
+    def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
         values: list[Value] = []
         for _ in range(0, self._get_count(parent)):
             stack = StackV()
-            self.subcodec.io_parse(stack, io)
+            self.subcodec.io_parse(stack, codecs, io)
             values.append(stack.pop())
-        parent.push(Value(self.name, values, sum(item.size for item in values)))
+        parent.push(Value(self.name, values, sum(item.sizeof() for item in values)))
+        codecs.push(self)
 
     @override
-    def io_build(self, parent: StackV, container: Container) -> None:
+    def io_build(self, parent: StackV, codecs: StackC, container: Container) -> None:
         values = container[self.name]
         if not isinstance(values, Collection):
             raise TypeError(
@@ -993,58 +1197,13 @@ class Array(Codec):
             raise ValueError(
                 f"Expected collection to be size of exactly {count}, got {len(values)}"
             )
-        raw = BitStream()
+        raw = ConstBitStream()
         for value in values:
             stack = StackV()
-            self.subcodec.io_build(stack, Container({self.name: value}))
+            self.subcodec.io_build(stack, codecs, Container({self.name: value}))
             raw += stack.pop().bitstream
         parent.push(Value(self.name, raw, len(raw)))
-
-
-class Peek(Codec):
-    """
-    Allows you to look ahead of the current position and
-    >>> Struct(
-        # Move the stream ahead 8 bits then parse the id, then revert
-        "id" / Peek(MANUFACTURER_ID, offset=8),
-        "opcode" / Switch(
-            lambda packet: packet.id,
-            ...
-        ),
-        Padding(8),  # id (Handled via the peek already)
-    )
-    """
-
-    @override
-    def __init__(self, subcodec: Codec, /, offset: int) -> None:
-        super().__init__(subcodec)
-        self.size = 0
-        self._offset = offset
-
-    @override
-    def sizeof(self, parent: StackV, io: IoType = None) -> int:
-        return 0
-
-    @override
-    def io_parse(self, parent: StackV, io: ConstBitStream) -> None:
-        """This IO parse method doesn't consume the IO stream, we just *peek* at the stream"""
-        try:
-            codec_size = self.subcodec.sizeof(parent, io)
-            peek = io[self._offset : self._offset + codec_size]
-        except ReadError as err:
-            raise ParseError(
-                parent,
-                self.subcodec,
-                io,
-                "Ran into an error reading ConstBitStream",
-            ) from err
-        self.subcodec.io_parse(parent, peek)
-        sn, value = parent.get(self.subcodec.name)
-        parent.set(sn, Value(value.name, value.v_item, 0))
-
-    @override
-    def io_build(self, parent: StackV, container: Container) -> None:
-        pass
+        codecs.push(self)
 
 
 class Checksum(BitsInt):
@@ -1083,11 +1242,11 @@ class Checksum(BitsInt):
         self.field_names = field_names
 
     @override
-    def io_build(self, parent: StackV, container: Container) -> None:
+    def io_build(self, parent: StackV, codecs: StackC, container: Container) -> None:
         # The checksum field itself is set to zero during checksum calculation.
-        self._write_io(parent, self.name, 0)
+        self._write_io(parent, codecs, self.name, 0)
 
-    def _post_build(self, parent: StackV, data: BitStream) -> None:
+    def _post_build(self, parent: StackV, data: ConstBitStream) -> None:
         for item in parent:
             if isinstance(item.v_item, StackV):
                 self._post_build(item.v_item, data)
@@ -1101,7 +1260,7 @@ class Checksum(BitsInt):
             data += item.bitstream
 
     def post_build(self, parent: StackV) -> None:
-        data = BitStream()
+        data = ConstBitStream()
         self._post_build(parent, data)
         if len(data) % 8 != 0:
             raise SizeError(
@@ -1123,7 +1282,7 @@ class Checksum(BitsInt):
 # ---------------- Mappings ----------------
 
 
-class Switch[MKey: Any, MValue: Codec](Codec):
+class Switch[MKey: Any, MValue: Codec | Struct = Codec](Codec):
     """
     >>> "header" / Switch[str, Codec](
         lambda packet: packet.protocol,
@@ -1134,66 +1293,74 @@ class Switch[MKey: Any, MValue: Codec](Codec):
     @override
     def __init__(
         self,
-        funct: FunctType[Any],
+        funct: FunctType[MKey],
         mapping: dict[MKey, MValue],
         *,
         default: DefaultType | MValue = Error,
-        embedded: bool | None = None,
+        embedded: bool = False,
     ) -> None:
         super().__init__()
         self.function = funct
-        self.mapping = mapping
-        for codec in self.mapping.values():
-            codec.name = self.name
-            if embedded is not None and isinstance(codec, Struct):
-                codec.embedded = embedded
+        self._mapping = mapping
         self._default = default
         self.embedded = embedded
+        for codec in self._mapping.values():
+            codec.rename(self.name)
+            if embedded is True and isinstance(codec, Struct):
+                codec.embedded = embedded
+        # NOTE: This is the one of the few class that is allowed a size of 0
+        self._size = 0
+
+    @override
+    def rename(self, name: str) -> None:
+        super().rename(name)
+        for codec in self._mapping.values():
+            codec.rename(self.name)
 
     @override
     def __repr__(self) -> str:
-        if isinstance(self.size, int):
-            return f"{self.name!r} / {self.__class__.__name__}({self.size}, {self.embedded=})"
+        if isinstance(self._size, int):
+            return f"{self.name!r} / {self.__class__.__name__}({self._size}, {self.embedded=})"
         return f"{self.name!r} / {self.__class__.__name__}"
 
     @override
     def __rtruediv__(self, other: Any) -> Self:
-        for key, codec in self.mapping.items():
-            self.mapping[key] = other / codec
+        for key, codec in self._mapping.items():
+            self._mapping[key] = other / codec
         return super().__rtruediv__(other)
 
     @override
-    def io_parse(self, parent: StackV, io: ConstBitStream) -> None:
-        mapping_key: MKey
-        subcodec: DefaultType | MValue
+    def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
+        mapping_key: MKey = None
+        subcodec: DefaultType | MValue = None
         try:
             mapping_key = self.function(parent)
-            subcodec = self.mapping[mapping_key]
+            subcodec = self._mapping[mapping_key]
         except (ValueError, KeyError):
             if self._default.__class__ is _Error:
-                Error.raise_error()
+                Error.raise_error(parent, codecs, io=io, key=mapping_key)
             if self._default.__class__ is _Pass:
                 return
             subcodec = self._default
-        subcodec.io_parse(parent, io)
+        subcodec.io_parse(parent, codecs, io)
 
     @override
-    def io_build(self, parent: StackV, container: Container) -> None:
+    def io_build(self, parent: StackV, codecs: StackC, container: Container) -> None:
         mapping_key = self.function(container)
-        if mapping_key not in self.mapping:
+        if mapping_key not in self._mapping:
             if self._default.__class__ is _Pass:
                 return
             if self._default.__class__ is _Error:
-                Error.raise_error()
+                Error.raise_error(parent, codecs, container=container, key=mapping_key)
             raise BuildError(
                 parent,
-                self,
+                codecs,
                 container,
-                f"Value {mapping_key} wasn't found in the mapping {self.mapping}",
+                f"Value {mapping_key} wasn't found in the mapping {self._mapping}",
             )
 
-        subcodec = self.mapping[mapping_key]
-        subcodec.io_build(parent, container)
+        subcodec = self._mapping[mapping_key]
+        subcodec.io_build(parent, codecs, container)
 
 
 # ---------------- Greedy ----------------
@@ -1216,9 +1383,11 @@ class GreedyArray(Array):
         if max_count == 0:
             raise ValueError("Count cannot be 0")
         super().__init__(subcodec, max_count)
+        # NOTE: This is the one of the few class that is allowed a size of 0
+        self._size = 0
 
     @override
-    def io_parse(self, parent: StackV, io: ConstBitStream) -> None:
+    def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
         values: list[Value] = []
         max_count = self._get_count(parent)
         i = 0
@@ -1227,15 +1396,16 @@ class GreedyArray(Array):
         else:
             while io.pos < len(io):
                 stack = StackV()
-                self.subcodec.io_parse(stack, io)
+                self.subcodec.io_parse(stack, codecs, io)
                 values.append(stack.pop())
                 i += 1
                 if max_count > 0 and i >= max_count:
                     break
-        parent.push(Value(self.name, values, sum(item.size for item in values)))
+        parent.push(Value(self.name, values, sum(item.sizeof() for item in values)))
+        codecs.push(self)
 
     @override
-    def io_build(self, parent: StackV, container: Container) -> None:
+    def io_build(self, parent: StackV, codecs: StackC, container: Container) -> None:
         values = container[self.name]
         if not isinstance(values, Collection):
             raise TypeError(
@@ -1247,12 +1417,13 @@ class GreedyArray(Array):
             raise ValueError(
                 f"Expected collection to be size of exactly {max_count}, got {len(values)}"
             )
-        raw = BitStream()
+        raw = ConstBitStream()
         for value in values:
             stack = StackV()
-            self.subcodec.io_build(stack, Container({self.name: value}))
+            self.subcodec.io_build(stack, codecs, Container({self.name: value}))
             raw += stack.pop().bitstream
         parent.push(Value(self.name, raw, len(raw)))
+        codecs.push(self)
 
 
 class GreedyBits(Codec):
@@ -1274,9 +1445,11 @@ class GreedyBits(Codec):
     def __init__(self, *, max_size: FunctType[int] | int = 0) -> None:
         super().__init__()
         self._max_size: FunctType[int] | int = max_size
+        # NOTE: This is the one of the few class that is allowed a size of 0
+        self._size = 0
 
     @override
-    def sizeof(self, parent: StackV, io: IoType = None) -> int:
+    def sizeof(self, parent: StackV, codecs: StackC, io: IoType = None) -> int:
         if callable(self._max_size):
             size = self._max_size(parent)
         elif self._max_size > 0:
@@ -1291,23 +1464,24 @@ class GreedyBits(Codec):
         return size
 
     @override
-    def io_parse(self, parent: StackV, io: ConstBitStream) -> None:
-        value, size = self._read_io(parent, io)
+    def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
+        value, size = self._read_io(parent, codecs, io)
         parent.push(Value(self.name, value, size))
+        codecs.push(self)
 
     @override
-    def io_build(self, parent: StackV, container: Container) -> None:
+    def io_build(self, parent: StackV, codecs: StackC, container: Container) -> None:
         if self.name not in container:
             raise BuildError(
                 parent,
-                self,
+                codecs,
                 container,
                 f"Name {self.name} wasn't found in the container",
             )
         value = container[self.name]
         if isinstance(value, bytes):
             container.set(self.name, ConstBitStream(value), ignore_frozen=True)
-        self._write_io(parent, self.name, container[self.name])
+        self._write_io(parent, codecs, self.name, container[self.name])
 
 
 # ---------------- Statements ----------------
@@ -1330,52 +1504,54 @@ class Conditional(Codec):
         then_: Codec,
         else_: Codec = Pass,
         *,
-        embedded: bool | None = None,
+        embedded: bool = False,
     ) -> None:
         super().__init__()
         self.condition = condition
-        if embedded is not None:
+        if embedded is True:
             if isinstance(then_, Struct):
                 then_.embedded = embedded
             if isinstance(else_, Struct):
                 else_.embedded = embedded
         self.embedded = embedded
-        self.then_ = self.name / then_
-        self.else_ = self.name / else_
+        self._then = self.name / then_
+        self._else = self.name / else_
+        # NOTE: This is the one of the few class that is allowed a size of 0
+        self._size = 0
 
     @override
     def __repr__(self) -> str:
-        if isinstance(self.size, int):
-            return f"{self.name!r} / {self.__class__.__name__}({self.size}, {self.embedded=})"
+        if isinstance(self._size, int):
+            return f"{self.name!r} / {self.__class__.__name__}({self._size}, {self.embedded=})"
         return f"{self.name!r} / {self.__class__.__name__}"
 
     @override
     def __rtruediv__(self, other: Any) -> Self:
         new = super().__rtruediv__(other)
         # Give the sub-codecs the same name as this divisor
-        new.then_ = new.name / new.then_
-        new.else_ = new.name / new.else_
+        new._then = new.name / new._then
+        new._else = new.name / new._else
         return new
 
     @override
-    def sizeof(self, parent: StackV, io: IoType = None) -> int:
+    def sizeof(self, parent: StackV, codecs: StackC, io: IoType = None) -> int:
         if self.condition(parent):
-            return self.then_.sizeof(parent, io)
-        return self.else_.sizeof(parent, io)
+            return self._then.sizeof(parent, codecs, io)
+        return self._else.sizeof(parent, codecs, io)
 
     @override
-    def io_parse(self, parent: StackV, io: ConstBitStream) -> None:
+    def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
         if self.condition(parent):
-            self.then_.io_parse(parent, io)
-        elif self.else_ is not Pass:
-            self.else_.io_parse(parent, io)
+            self._then.io_parse(parent, codecs, io)
+        elif self._else is not Pass:
+            self._else.io_parse(parent, codecs, io)
 
     @override
-    def io_build(self, parent: StackV, container: Container) -> None:
+    def io_build(self, parent: StackV, codecs: StackC, container: Container) -> None:
         if self.condition(container):
-            self.then_.io_build(parent, container)
+            self._then.io_build(parent, codecs, container)
         else:
-            self.else_.io_build(parent, container)
+            self._else.io_build(parent, codecs, container)
 
 
 class Optional(Codec):
@@ -1384,16 +1560,16 @@ class Optional(Codec):
     """
 
     @override
-    def io_parse(self, parent: StackV, io: ConstBitStream) -> None:
-        if self.sizeof(parent, io) == 0:
+    def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
+        if self.sizeof(parent, codecs, io) == 0:
             return
         with suppress(ParseError):
-            self.subcodec.io_parse(parent, io)
+            self.subcodec.io_parse(parent, codecs, io)
 
     @override
-    def io_build(self, parent: StackV, container: Container) -> None:
+    def io_build(self, parent: StackV, codecs: StackC, container: Container) -> None:
         if self.name in container:
-            self.subcodec.io_build(parent, container)
+            self.subcodec.io_build(parent, codecs, container)
 
 
 # ---------------- Helpers ----------------
