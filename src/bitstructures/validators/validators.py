@@ -4,7 +4,7 @@ from typing import override
 from bitstring import ConstBitStream
 
 from bitstructures.base.codec import BitsInt, Container, StackC, StackV, Value
-from bitstructures.exceptions import BlacklistError, WhitelistError
+from bitstructures.exceptions import BlacklistError, WhitelistError, add_codec_traceback
 
 
 class Blacklisted(BitsInt):
@@ -17,17 +17,24 @@ class Blacklisted(BitsInt):
     def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
         value, size = self._read_io(parent, codecs, io)
         if value.uint in self._array:
+            add_codec_traceback(self, codecs)
             raise BlacklistError(
-                f"Cannot parse value {value} as it's listed in the blacklisted values {self._array}"
+                parent,
+                codecs,
+                f"Cannot parse value {value} as it's listed "
+                f"in the blacklisted values {self._array}",
             )
         parent.push(Value(self.name, value.uint, size))
-        codecs.push(self)
 
     @override
     def io_build(self, parent: StackV, codecs: StackC, container: Container) -> None:
         if (value := container[self.name]) in self._array:
+            add_codec_traceback(self, codecs)
             raise BlacklistError(
-                f"Cannot build value {value} as it's listed in the blacklisted values {self._array}"
+                parent,
+                codecs,
+                f"Cannot build value {value} as it's listed "
+                f"in the blacklisted values {self._array}",
             )
         super().io_build(parent, codecs, container)
 
@@ -42,18 +49,23 @@ class Whitelisted(BitsInt):
     def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
         value, size = self._read_io(parent, codecs, io)
         if value.uint not in self._array:
+            add_codec_traceback(self, codecs)
             raise WhitelistError(
+                parent,
+                codecs,
                 f"Cannot parse value {value} as it's not "
-                f"listed as a whitelisted value {self._array}"
+                f"listed as a whitelisted value {self._array}",
             )
         parent.push(Value(self.name, value.uint, size))
-        codecs.push(self)
 
     @override
     def io_build(self, parent: StackV, codecs: StackC, container: Container) -> None:
         if (value := container[self.name]) not in self._array:
+            add_codec_traceback(self, codecs)
             raise WhitelistError(
+                parent,
+                codecs,
                 f"Cannot build value {value} as it's not listed "
-                f"as a whitelisted value {self._array}"
+                f"as a whitelisted value {self._array}",
             )
         super().io_build(parent, codecs, container)

@@ -1,17 +1,17 @@
+from collections.abc import Callable
 from ipaddress import IPv4Address
 from typing import Any, override
 
 from bitstring import ConstBitStream
 
 from bitstructures.base.codec import BitsInt, Codec, Container, StackC, StackV, Value
-from bitstructures.exceptions import InitError
 from bitstructures.helpers import bitshift
-from bitstructures.typing import ExpType, FunctType
+from bitstructures.typing import AdapterProtocol, ExpType, FunctType, ValueType
 
 # ---------------- Base Adapter ----------------
 
 
-class Adapter(Codec):
+class Adapter(Codec, AdapterProtocol):
     @override
     def __init__(self, subcodec: Codec) -> None:
         super().__init__(subcodec)
@@ -20,28 +20,14 @@ class Adapter(Codec):
     def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
         self.subcodec.io_parse(parent, codecs, io)
         sn, value = parent.get(self.subcodec.name)
-        parent.set(sn, Value(value.name, self.decode(parent, value.v_item), value.size))
+        parent.set(sn, Value(value.name, self.decode(parent, codecs, value.v_item), value.size))
 
     @override
     def io_build(self, parent: StackV, codecs: StackC, container: Container) -> None:
         c_value = container[self.name]
-        encoded = self.encode(parent, c_value)
+        encoded = self.encode(parent, codecs, c_value)
         container.set(self.name, encoded, ignore_frozen=True)
         self.subcodec.io_build(parent, codecs, container)
-
-    # ---- OVERRIDE ----
-
-    def decode(self, parent: StackV, value: Any) -> Any:
-        """Override these method in the subclasses"""
-        raise NotImplementedError(
-            f"The function decode must be derived in a subclass {self.__class__.__name__}"
-        )
-
-    def encode(self, parent: StackV, value: Any) -> Any:
-        """Override these method in the subclasses"""
-        raise NotImplementedError(
-            f"The function endecode must be derived in a subclass {self.__class__.__name__}"
-        )
 
 
 # ---------------- Adapters ----------------
@@ -49,11 +35,11 @@ class Adapter(Codec):
 
 class IpAddress(Adapter):
     @override
-    def decode(self, parent: StackV, value: int) -> str:
+    def decode(self, parent: StackV, codecs: StackC, value: int) -> str:
         return str(IPv4Address(value))
 
     @override
-    def encode(self, parent: StackV, value: str) -> int:
+    def encode(self, parent: StackV, codecs: StackC, value: str) -> int:
         return int(IPv4Address(value))
 
 
@@ -69,11 +55,11 @@ class Scaler(Adapter):
         self._factor = factor
 
     @override
-    def decode(self, parent: StackV, value: float) -> float:
+    def decode(self, parent: StackV, codecs: StackC, value: float) -> float:
         return value * self._factor
 
     @override
-    def encode(self, parent: StackV, value: float) -> float:
+    def encode(self, parent: StackV, codecs: StackC, value: float) -> float:
         return int(value / self._factor)
 
 
@@ -81,28 +67,22 @@ class ExprAdapter(Adapter):
     @override
     def __init__(self, subcodec: Codec, encoder: ExpType, decoder: ExpType) -> None:
         super().__init__(subcodec)
-        if not callable(encoder):
-            raise InitError(
-                "Encoder must be a callable funct1ion: def x(value: float, parent: StackV)"
-            )
-        if not callable(decoder):
-            raise InitError("Decoder must be a callable function: def x(value: float)")
         self._encode = encoder
         self._decode = decoder
 
     @override
-    def decode(self, parent: StackV, value: Any) -> Any:
+    def decode(self, parent: StackV, codecs: StackC, value: Any) -> Any:
         return self._encode(value)
 
     @override
-    def encode(self, parent: StackV, value: Any) -> Any:
+    def encode(self, parent: StackV, codecs: StackC, value: Any) -> Any:
         return self._decode(value)
 
 
 # ---------------- Computed ----------------
 
 
-class Computed[T](Codec):
+class Computed[T: ValueType](Codec):
     @override
     def __init__(self, function: FunctType[T], *args: Any, **kwargs: Any) -> None:
         super().__init__()
@@ -144,7 +124,7 @@ class Bitshift(Codec):
     @override
     def __init__(
         self,
-        funct: FunctType[int] = bitshift,
+        funct: Callable[[Container[int], str, bool], int] = bitshift,
         *args: Any,
         **kwargs: Any,
     ) -> None:

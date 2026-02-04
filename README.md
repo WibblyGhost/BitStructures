@@ -197,30 +197,6 @@ class Padding(Codec):
 ### Core Codecs
 
 ```python
-class RawBits(Codec):
-    """
-    Base class for some Bit Codecs, can be used externally.
-    Defines a raw representation of the ConstBitStream,
-    will return a ConstBitStream object when parsing and takes a ConstBitStream object on building.
-
-    >>> raw_bits = "raw1" | RawBits(8)
-
-    >>> raw_bits.build(
-        Container(
-            raw1=ConstBitStream("0b00010000")
-        )
-    )
-    >>>> b"\x10"
-
-    >>> raw_bits.parse(b"\x10")
-    >>>> 0b00010000
-    """
-
-    size: int | Callable[[StackV], int]
-    def __init__(self, size: int) -> None: ...
-    def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None: ...
-    def io_build(self, parent: StackV, codecs: StackC, container: Container) -> None: ...
-
 class Padding(Codec):
     """
     Used when we don\'t want any value to represent the allocated data,
