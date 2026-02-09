@@ -26,7 +26,7 @@ class InitError(BitstructuresError): ...
 # ---- CODEC ERRORS (Contain Tracebacks) ----
 
 
-def add_codec_traceback(codec: "Codec", stack: "StackC") -> None:
+def add_codec_to_traceback(codec: "Codec", stack: "StackC") -> None:
     """
     Adds the current codec to the stack traceback stack.
     Used before raising Codec errors to assure
@@ -44,22 +44,15 @@ class CodecError(BitstructuresError):
         self.add_note(f"Codec Stack:\n{codecs.pprint()}")
 
 
-class SizeOfError(CodecError): ...
-
-
-class CodecTypeError(CodecError): ...
-
-
-class CodecValueError(CodecError): ...
-
-
-class CodecAttributeError(CodecError): ...
+class SizeOfError(CodecError):
+    def __init__(self, parent: "StackV | Container", codecs: "StackC", *args: object) -> None:
+        super().__init__(parent, codecs, *args)  # type: ignore[arg-type]
 
 
 class StackError(CodecError): ...
 
 
-class IoError(CodecError): ...
+class BitsIoError(CodecError): ...
 
 
 class ChecksumError(CodecError): ...
@@ -72,6 +65,12 @@ class WhitelistError(CodecError): ...
 
 
 class ConstantError(CodecError): ...
+
+
+class EncodeError(CodecError): ...
+
+
+class DecodeError(CodecError): ...
 
 
 class ParseError(CodecError):
@@ -95,7 +94,7 @@ class BuildError(CodecError):
         self, parent: "StackV", codecs: "StackC", container: "Container", *args: object
     ) -> None:
         super().__init__(parent, codecs, *args)
-        self.add_note(f"Container:\n-{container.pprint()}")
+        self.add_note(f"Container:\n{container.pprint()}")
 
 
 class TriggeredError(CodecError):

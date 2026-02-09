@@ -5,6 +5,13 @@ from typing import Any, override
 from bitstring import ConstBitStream
 
 from bitstructures.base.codec import BitsInt, Codec, Container, StackC, StackV, Value
+from bitstructures.exceptions import (
+    CodecError,
+    DecodeError,
+    EncodeError,
+    ParseError,
+    add_codec_to_traceback,
+)
 from bitstructures.helpers import bitshift
 from bitstructures.typing import AdapterProtocol, ExpType, FunctType, ValueType
 
@@ -18,14 +25,29 @@ class Adapter(Codec, AdapterProtocol):
 
     @override
     def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
+        add_codec_to_traceback(self, codecs)
+
         self.subcodec.io_parse(parent, codecs, io)
         sn, value = parent.get(self.subcodec.name)
-        parent.set(sn, Value(value.name, self.decode(parent, codecs, value.v_item), value.size))
+        try:
+            decoded = self.decode(parent, codecs, value.v_item)
+        except CodecError:
+            raise  # These errors already have our traceback
+        except Exception as err:
+            raise DecodeError(parent, codecs) from err
+        parent.set(sn, Value(value.name, decoded, value.size))
 
     @override
     def io_build(self, parent: StackV, codecs: StackC, container: Container) -> None:
+        add_codec_to_traceback(self, codecs)
+
         c_value = container[self.name]
-        encoded = self.encode(parent, codecs, c_value)
+        try:
+            encoded = self.encode(parent, codecs, c_value)
+        except CodecError:
+            raise  # These errors already have our traceback
+        except Exception as err:
+            raise EncodeError(parent, codecs) from err
         container.set(self.name, encoded, ignore_frozen=True)
         self.subcodec.io_build(parent, codecs, container)
 
@@ -72,11 +94,11 @@ class ExprAdapter(Adapter):
 
     @override
     def decode(self, parent: StackV, codecs: StackC, value: Any) -> Any:
-        return self._encode(value)
+        return self._decode(value)
 
     @override
     def encode(self, parent: StackV, codecs: StackC, value: Any) -> Any:
-        return self._decode(value)
+        return self._encode(value)
 
 
 # ---------------- Computed ----------------
@@ -94,24 +116,18 @@ class Computed[T: ValueType](Codec):
 
     @override
     def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
-        # NOTE: The computed class doesn't consume the bitstream
+        add_codec_to_traceback(self, codecs)
+
+        # NOTE: The Computed class doesn't consume the bitstream
         computed = self.function(parent)
         parent.push(Value(self.name, computed, 0))
-        codecs.push(self)
 
     @override
     def io_build(self, parent: StackV, codecs: StackC, container: Container[Any]) -> None:
-        return
+        # NOTE: Same as the Pass() class
+        add_codec_to_traceback(self, codecs)
 
-
-# @override
-# def io_parse(self, parent: StackV, io: ConstBitStream) -> None:
-#     container = super().io_parse(parent, io)
-#     return self.function(container, *self.args, **self.kwargs)
-
-# @override
-# def io_build(self, parent: StackV, container: Container) -> None:
-#     return
+        parent.push(Value(self.name, ConstBitStream(), 0))
 
 
 class Bitshift(Codec):
@@ -124,22 +140,36 @@ class Bitshift(Codec):
     @override
     def __init__(
         self,
-        funct: Callable[[Container[int], str, bool], int] = bitshift,
-        *args: Any,
-        **kwargs: Any,
+        field_name: str,
+        funct: Callable[[StackV, str, bool], int] = bitshift,
+        msb: bool = True,
     ) -> None:
         super().__init__()
+        self._field_name = field_name
+        self._msb = msb
         self._funct = funct
-        self._args = args
-        self._kwargs = kwargs
 
+    @override
+    def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
+        add_codec_to_traceback(self, codecs)
 
-# @override
-# def io_build(self, parent: StackV, container: Container) -> None:
-#     """The bitshift doesn't get built through this Codes and must be done beforehand"""
+        # NOTE: The Bitshift class doesn't consume the bitstream
+        if getattr(parent, f"{self._field_name}_p1", None):
+            value = self._funct(parent, self._field_name, self._msb)
+        elif getattr(
+            parent._, f"{self._field_name}_p1", None
+        ):  # Check the parent also as a failsafe
+            value = self._funct(parent._, self._field_name, self._msb)
+        else:
+            raise KeyError(
+                f"Field {self._field_name!r} not found in the parent stack"
+            ) from ParseError(parent, codecs, io)
+        parent.push(Value(self.name, value, 0))
 
-# @override
-# def io_parse(self, parent: StackV, io: ConstBitStream) -> None:
-#     bitshifted = self._funct(parent, *self._args, **self._kwargs)
-#     parent.set(self.name, bitshifted, ignore_frozen=True)
-#     return parent
+    @override
+    def io_build(self, parent: StackV, codecs: StackC, container: Container[Any]) -> None:
+        """The bitshift doesn't get built through this Codes and must be done beforehand"""
+        # NOTE: Same as the Pass() class
+        add_codec_to_traceback(self, codecs)
+
+        parent.push(Value(self.name, ConstBitStream(), 0))

@@ -4,7 +4,7 @@ from typing import override
 from bitstring import ConstBitStream
 
 from bitstructures.base.codec import BitsInt, Container, StackC, StackV, Value
-from bitstructures.exceptions import BlacklistError, WhitelistError, add_codec_traceback
+from bitstructures.exceptions import BlacklistError, WhitelistError, add_codec_to_traceback
 
 
 class Blacklisted(BitsInt):
@@ -15,9 +15,10 @@ class Blacklisted(BitsInt):
 
     @override
     def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
+        add_codec_to_traceback(self, codecs)
+
         value, size = self._read_io(parent, codecs, io)
         if value.uint in self._array:
-            add_codec_traceback(self, codecs)
             raise BlacklistError(
                 parent,
                 codecs,
@@ -28,8 +29,9 @@ class Blacklisted(BitsInt):
 
     @override
     def io_build(self, parent: StackV, codecs: StackC, container: Container) -> None:
+        add_codec_to_traceback(self, codecs)
+
         if (value := container[self.name]) in self._array:
-            add_codec_traceback(self, codecs)
             raise BlacklistError(
                 parent,
                 codecs,
@@ -47,9 +49,10 @@ class Whitelisted(BitsInt):
 
     @override
     def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
+        add_codec_to_traceback(self, codecs)
+
         value, size = self._read_io(parent, codecs, io)
         if value.uint not in self._array:
-            add_codec_traceback(self, codecs)
             raise WhitelistError(
                 parent,
                 codecs,
@@ -60,8 +63,9 @@ class Whitelisted(BitsInt):
 
     @override
     def io_build(self, parent: StackV, codecs: StackC, container: Container) -> None:
+        add_codec_to_traceback(self, codecs)
+
         if (value := container[self.name]) not in self._array:
-            add_codec_traceback(self, codecs)
             raise WhitelistError(
                 parent,
                 codecs,
