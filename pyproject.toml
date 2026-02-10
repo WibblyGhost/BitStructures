@@ -61,13 +61,15 @@ select = [
     "F",  # pyflakes
     "E",  # pycodestyle
     "W",  # pycodestyle
+    "D",  # pydocstyle
     "I",  # isort
     "N",  # pep8-naming
     "UP",  # pyupgrade
     "R",  # refactor
     "ASYNC",  # flake8-async
     "BLE",  # flake8-blind-except
-    "A",  # flake8-builtilns
+    "B",  # flake8-bugbear
+    "A",  # flake8-buildins
     "C4",  # flake8-comprehensions
     "DTZ",  # flake8-datetimez
     "LOG",  # flake8-logging
@@ -84,20 +86,22 @@ select = [
 ]
 fixable = ["ALL"]
 ignore = [
-    "PLR0915",  # too many statements
-    "PLR0912",  # too many branches
-    "PLR0913",  # too many arguments
-    "PLR2004",  # magic values
-    "RUF013",  # implicit optional (mypy)
-    "RUF012",  # classvar annotations
-    "SIM108",  # ternary oprators (single line if statements)
-    "ASYNC109",  # Use asyncio timeout instead
-    "FIX002",  # TODO statements
+    "D100",  # Docstring in public module
+    "D102",  # Docstring in public method
+    "D203",  # Blank line before class
+    "D104",  # Docstring in public package
+    "D105",  # Docstring in magic method
+    "D212",  # Multiline Docstring Start
+    "D205",  # Line between summary and description
+    "D401",  # Docstring imperative mood
+    "D107",  # Docstring in __init__  # We use the public class docstrings
 ]
 isort.split-on-trailing-comma = false
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*.py" = ["SLF001", "PT013"]
+"typing.py" = ["D101", "D107"]
+"exceptions.py" = ["D101", "D107"]
 
 [tool.ruff.format]
 # skip-magic-trailing-comma = true

@@ -28,9 +28,8 @@ class InitError(BitstructuresError): ...
 
 def add_codec_to_traceback(codec: "Codec", stack: "StackC") -> None:
     """
-    Adds the current codec to the stack traceback stack.
-    Used before raising Codec errors to assure
-    the current Codec gets added to the traceback.
+    Add the current codec to the stack traceback stack.
+    Used before raising Codec errors to assure the current Codec gets added to the traceback.
     """
     stack.push(codec)
 

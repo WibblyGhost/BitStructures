@@ -8,6 +8,13 @@ from bitstructures.exceptions import BlacklistError, WhitelistError, add_codec_t
 
 
 class Blacklisted(BitsInt):
+    """
+    Prevents parsing/building a certain range of values, failing to do so
+    will raise a BlacklistedError.
+
+    >>> "digit" = Blacklisted(8, [0])
+    """
+
     @override
     def __init__(self, size: int, array: Iterable[int]) -> None:
         super().__init__(size)
@@ -42,6 +49,13 @@ class Blacklisted(BitsInt):
 
 
 class Whitelisted(BitsInt):
+    """
+    Only allows parsing/building a certain range of values, failing to do so
+    will raise a WhitelistedError.
+
+    >>> "digit" = Whitelisted(8, list(range(34))
+    """
+
     @override
     def __init__(self, size: int, array: Iterable[int]) -> None:
         super().__init__(size)

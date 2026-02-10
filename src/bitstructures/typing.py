@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any, Protocol, Self, runtime_checkable
 
 from bitstring import ConstBitStream
@@ -11,6 +11,7 @@ if TYPE_CHECKING:
         Stack,
         StackC,
         StackV,
+        Value,
         _Error,
         _Pass,
     )
@@ -18,8 +19,8 @@ if TYPE_CHECKING:
 
 # ---- TYPING ----
 
-
-type ValueType = str | int | EnumBase | ConstBitStream | StackV | list[ValueType]
+type _Value = Any | EnumBase | ConstBitStream | StackV | Value
+type ValueType = _Value | Sequence[ValueType]
 type ContainerType = StackV | Container
 type DefaultType = _Pass | _Error
 type FunctType[T] = Callable[[ContainerType], T]
@@ -34,7 +35,7 @@ type ReadIoType = ConstBitStream
 
 
 class SupportsSeek(Protocol):
-    """Shadows the ConstBitStream type classes"""
+    """Shadows the ConstBitStream type classes."""
 
     @property
     def pos(self) -> int: ...
@@ -53,7 +54,7 @@ class SupportsPPrint(Protocol):
     def pprint(self) -> str: ...
 
 
-class CodecProtocol(Protocol):
+class CodecProtocol(SupportsName, Protocol):
     def __init__(self, subcodec: "Codec | None" = None) -> None: ...
     @property
     def name(self) -> str: ...
@@ -68,7 +69,12 @@ class CodecProtocol(Protocol):
         self, parent: "StackV", codecs: "StackC", io: ReadIoType
     ) -> tuple[ConstBitStream, int]: ...
     def _write_io(
-        self, parent: "StackV", codecs: "StackC", name: str, value: WriteIoType
+        self,
+        parent: "StackV",
+        codecs: "StackC",
+        container: "Container",
+        name: str,
+        value: WriteIoType,
     ) -> None: ...
     def sizeof(self, parent: "StackV | Container", codecs: "StackC", io: IoType = None) -> int: ...
     def io_parse(self, parent: "StackV", codecs: "StackC", io: ConstBitStream) -> None: ...

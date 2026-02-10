@@ -12,13 +12,24 @@ from bitstructures.exceptions import (
     ParseError,
     add_codec_to_traceback,
 )
-from bitstructures.helpers import bitshift
 from bitstructures.typing import AdapterProtocol, ExpType, FunctType, ValueType
 
 # ---------------- Base Adapter ----------------
 
 
 class Adapter(Codec, AdapterProtocol):
+    """
+    Used for creating basic encoding/decoding functions that work on the
+    stream during the parsing/building process. This allows us to perform
+    small tweaks and value manipulation.
+
+    This class isn't used directly and is subclassed to create custom functions.
+    The following two functions must be defined in the subclass:
+
+    def decode(self, parent: "StackV", codecs: "StackC", value: Any) -> Any: ...
+    def encode(self, parent: "StackV", codecs: "StackC", value: Any) -> Any: ...
+    """
+
     @override
     def __init__(self, subcodec: Codec) -> None:
         super().__init__(subcodec)
@@ -56,6 +67,12 @@ class Adapter(Codec, AdapterProtocol):
 
 
 class IpAddress(Adapter):
+    """
+    Converts an integer into an IP Address and vice versa, this is usually a 32 bit field.
+
+    >>> "source_ip" / IpAddress(BitsInt(32))
+    """
+
     @override
     def decode(self, parent: StackV, codecs: StackC, value: int) -> str:
         return str(IPv4Address(value))
@@ -66,6 +83,12 @@ class IpAddress(Adapter):
 
 
 class Scaler(Adapter):
+    """
+    Simple adapter which multiplies the encoded/decoded value by an integer factor.
+
+    >>> "timer" / Scaler(BitsInt(16), factor=0.1)
+    """
+
     @override
     def __init__(self, subcodec: Codec, /, factor: float) -> None:
         if not isinstance(subcodec, BitsInt):
@@ -86,6 +109,16 @@ class Scaler(Adapter):
 
 
 class ExprAdapter(Adapter):
+    """
+    Simple adapter that takes lambda's as the encoders and decoders.
+
+    >>> "header_length" / ExprAdapter(
+        BitsInt(4),
+        encoder=lambda value: ceil(value / 4),
+        decoder=lambda value: value * 4,
+    )
+    """
+
     @override
     def __init__(self, subcodec: Codec, encoder: ExpType, decoder: ExpType) -> None:
         super().__init__(subcodec)
@@ -105,6 +138,13 @@ class ExprAdapter(Adapter):
 
 
 class Computed[T: ValueType](Codec):
+    """
+    Calculates the field upon parsing but doesn't build into the stream.
+    Useful for performing calculations that don't affect the stream.
+
+    >>> Computed(lambda packet: packet.length * 8)
+    """
+
     @override
     def __init__(self, function: FunctType[T], *args: Any, **kwargs: Any) -> None:
         super().__init__()
@@ -126,50 +166,61 @@ class Computed[T: ValueType](Codec):
     def io_build(self, parent: StackV, codecs: StackC, container: Container[Any]) -> None:
         # NOTE: Same as the Pass() class
         add_codec_to_traceback(self, codecs)
-
         parent.push(Value(self.name, ConstBitStream(), 0))
 
 
-class Bitshift(Codec):
+class Bitshift[T: Any = int](Codec):
     """
     Codec which deals with splitting addresses into multiple
     bit fields, done by checking the size of the packet and
-    applying a bitshift to combine the two packets
+    applying a bitshift to combine the two packets.
+
+    >>> Struct(
+        "id_p1" / BitsInt(2),
+        "random" / BitsInt(6),
+        "id_p2" / BitsInt(8),
+        "id" / Bitshift[int]("id", bitshift),
+    )
     """
 
     @override
     def __init__(
         self,
         field_name: str,
-        funct: Callable[[StackV, str, bool], int] = bitshift,
+        funct: Callable[..., T],
         msb: bool = True,
+        *args: Any,
+        **kwargs: Any,
     ) -> None:
         super().__init__()
         self._field_name = field_name
         self._msb = msb
         self._funct = funct
+        self._args = args
+        self._kwargs = kwargs
 
     @override
     def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
         add_codec_to_traceback(self, codecs)
 
         # NOTE: The Bitshift class doesn't consume the bitstream
-        if getattr(parent, f"{self._field_name}_p1", None):
-            value = self._funct(parent, self._field_name, self._msb)
-        elif getattr(
-            parent._, f"{self._field_name}_p1", None
-        ):  # Check the parent also as a failsafe
-            value = self._funct(parent._, self._field_name, self._msb)
-        else:
-            raise KeyError(
-                f"Field {self._field_name!r} not found in the parent stack"
-            ) from ParseError(parent, codecs, io)
+        try:
+            _ = getattr(parent, f"{self._field_name}_p1", None)
+            value = self._funct(parent, self._field_name, self._msb, *self._args, **self._kwargs)
+        except KeyError:
+            # Check the parent also as a failsafe
+            try:
+                _ = getattr(parent._, f"{self._field_name}_p1", None)
+                value = self._funct(
+                    parent._, self._field_name, self._msb, *self._args, **self._kwargs
+                )
+            except KeyError as err:
+                raise err from ParseError(parent, codecs, io)
         parent.push(Value(self.name, value, 0))
 
     @override
     def io_build(self, parent: StackV, codecs: StackC, container: Container[Any]) -> None:
-        """The bitshift doesn't get built through this Codes and must be done beforehand"""
+        """The bitshift doesn't get built through this Codes and must be done beforehand."""
         # NOTE: Same as the Pass() class
         add_codec_to_traceback(self, codecs)
-
         parent.push(Value(self.name, ConstBitStream(), 0))

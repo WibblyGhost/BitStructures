@@ -1,11 +1,13 @@
-from bitstructures.base.codec import Container
+
+from bitstructures.base.codec import Container, StackV
 
 
-def bitshift(packet: Container[int], field_name: str, msb: bool = False) -> int:
+def bitshift(packet: Container[int] | StackV, field_name: str, msb: bool = False) -> int:
     """
-    Works on LSB calculations by default
     Join two bitshifted ingeters by appending the second integer
     onto the end of the first integer.
+
+    Works on LSB calculations by default
     """
     # Left shift operation followed by a bitwise OR operation
     # This will append the part 2 to the end of part 1 and extend the packet
@@ -18,9 +20,10 @@ def bitshift(packet: Container[int], field_name: str, msb: bool = False) -> int:
 
 def reverse_bitshift(integer: int, bitshift: int, msb: bool = False) -> tuple[int, int]:
     """
-    Works on LSB calculations by default
     Split a packet into two seperate binary integers using a specified
     integer to bitshift, and a bitshift amount.
+
+    Works on LSB calculations by default
     """
     # 1. Determine size of second packet
     # 2. Extract the second number
