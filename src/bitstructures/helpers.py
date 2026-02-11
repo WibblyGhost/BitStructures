@@ -1,4 +1,3 @@
-
 from bitstructures.base.codec import Container, StackV
 
 

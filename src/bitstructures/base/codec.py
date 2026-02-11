@@ -1574,6 +1574,7 @@ class Switch[MKey: Any, MValue: Codec | Struct = Codec](Codec):
             if embedded is True and isinstance(codec, Struct):
                 codec.embedded = embedded
         if embedded is True and isinstance(self._default, Struct):
+            self._default.rename(self.name)
             self._default.embedded = embedded
         # NOTE: This is the one of the few class that is allowed a size of 0
         self._size = 0
@@ -1583,6 +1584,7 @@ class Switch[MKey: Any, MValue: Codec | Struct = Codec](Codec):
         super().rename(name)
         for codec in self._mapping.values():
             codec.rename(self.name)
+        self._default.rename(self.name)
 
     @override
     def __repr__(self) -> str:

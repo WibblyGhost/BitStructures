@@ -14,7 +14,7 @@ from math import ceil
 from bitstructures import (
     BitsInt,
     Const,
-    Enumerate,
+    Enum,
     ExprAdapter,
     Flag,
     IpAddress,
@@ -51,7 +51,7 @@ IPV4_HEADER = Struct(
     "fragment_offset" / BitsInt(13),
     "ttl" / BitsInt(8),
     "protocol"
-    / Enumerate(
+    / Enum(
         8,
         ICMP=1,
         TCP=6,
@@ -128,5 +128,3 @@ if __name__ == "__main__":
     raw = IP_PACKET.build(container)
     print(f"RAW:\n{raw!r}")
     print(f"{raw == ip_data=}")
-
-    print(IP_PACKET.pprint())
