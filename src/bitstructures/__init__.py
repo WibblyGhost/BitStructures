@@ -45,19 +45,14 @@ __all__ = [
     "bitshift",
     "reverse_bitshift",
 ]
-from bitstructures.adaptors.adapters import (
-    Adapter,
-    Bitshift,
-    Computed,
-    ExprAdapter,
-    IpAddress,
-    Scaler,
-)
+from bitstructures.adaptors.adapters import Adapter, ExprAdapter, IpAddress, Scaler
 from bitstructures.base.codec import (
     Array,
+    Bitshift,
     BitsInt,
     Checksum,
     Codec,
+    Computed,
     Conditional,
     Const,
     Container,

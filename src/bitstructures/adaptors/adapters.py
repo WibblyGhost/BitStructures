@@ -1,18 +1,11 @@
-from collections.abc import Callable
 from ipaddress import IPv4Address
 from typing import Any, override
 
 from bitstring import ConstBitStream
 
 from bitstructures.base.codec import BitsInt, Codec, Container, StackC, StackV, Value
-from bitstructures.exceptions import (
-    CodecError,
-    DecodeError,
-    EncodeError,
-    ParseError,
-    add_codec_to_traceback,
-)
-from bitstructures.typing import AdapterProtocol, ExpType, FunctType, ValueType
+from bitstructures.exceptions import CodecError, DecodeError, EncodeError, add_codec_to_traceback
+from bitstructures.typing import AdapterProtocol, ExpType
 
 # ---------------- Base Adapter ----------------
 
@@ -132,95 +125,3 @@ class ExprAdapter(Adapter):
     @override
     def encode(self, parent: StackV, codecs: StackC, value: Any) -> Any:
         return self._encode(value)
-
-
-# ---------------- Computed ----------------
-
-
-class Computed[T: ValueType](Codec):
-    """
-    Calculates the field upon parsing but doesn't build into the stream.
-    Useful for performing calculations that don't affect the stream.
-
-    >>> Computed(lambda packet: packet.length * 8)
-    """
-
-    @override
-    def __init__(self, function: FunctType[T], *args: Any, **kwargs: Any) -> None:
-        super().__init__()
-        self.function = function
-        self.args = args
-        self.kwargs = kwargs
-        # NOTE: This is the one of the few class that is allowed a size of 0
-        self._size = 0
-
-    @override
-    def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
-        add_codec_to_traceback(self, codecs)
-
-        # NOTE: The Computed class doesn't consume the bitstream
-        computed = self.function(parent)
-        parent.push(Value(self.name, computed, 0))
-
-    @override
-    def io_build(self, parent: StackV, codecs: StackC, container: Container[Any]) -> None:
-        # NOTE: Same as the Pass() class
-        add_codec_to_traceback(self, codecs)
-        parent.push(Value(self.name, ConstBitStream(), 0))
-
-
-class Bitshift[T: Any = int](Codec):
-    """
-    Codec which deals with splitting addresses into multiple
-    bit fields, done by checking the size of the packet and
-    applying a bitshift to combine the two packets.
-
-    >>> Struct(
-        "id_p1" / BitsInt(2),
-        "random" / BitsInt(6),
-        "id_p2" / BitsInt(8),
-        "id" / Bitshift[int]("id", bitshift),
-    )
-    """
-
-    @override
-    def __init__(
-        self,
-        field_name: str,
-        funct: Callable[..., T],
-        msb: bool = True,
-        *args: Any,
-        **kwargs: Any,
-    ) -> None:
-        super().__init__()
-        self._field_name = field_name
-        self._msb = msb
-        self._funct = funct
-        self._args = args
-        self._kwargs = kwargs
-
-    @override
-    def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
-        add_codec_to_traceback(self, codecs)
-
-        # NOTE: The Bitshift class doesn't consume the bitstream
-        try:
-            _ = getattr(parent, f"{self._field_name}_p1", None)
-            value = self._funct(parent, self._field_name, self._msb, *self._args, **self._kwargs)
-        except KeyError:
-            # Check the parent also as a failsafe
-            try:
-                _ = getattr(parent._, f"{self._field_name}_p1", None)
-                value = self._funct(
-                    parent._, self._field_name, self._msb, *self._args, **self._kwargs
-                )
-            except KeyError as err:
-                raise err from ParseError(parent, codecs, io)
-        parent.push(Value(self.name, value, 0))
-
-    @override
-    def io_build(self, parent: StackV, codecs: StackC, container: Container[Any]) -> None:
-        """The bitshift doesn't get built through this Codes and must be done beforehand."""
-        # NOTE: Same as the Pass() class
-        add_codec_to_traceback(self, codecs)
-        parent.push(Value(self.name, ConstBitStream(), 0))
