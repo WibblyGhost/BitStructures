@@ -1,0 +1,71 @@
+name: pre-commit
+
+on:
+  pull_request:
+  push:
+    branches: [trunk]
+    tags: []
+
+jobs:
+  BuildPackage:
+    runs-on: ubuntu-latest
+    steps:
+        # Setup
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Install UV
+        uses: astral-sh/setup-uv@v7
+        # Build Steps
+      - name: Build
+        run: uv build
+      - name: Upload Build Dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: build_artifacts
+          path: dist/*
+
+
+  CodeLinting:
+    runs-on: ubuntu-latest
+    steps:
+        # Setup
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Install UV
+        uses: astral-sh/setup-uv@v7
+      - name: Sync
+        run: uv sync
+        # Linting Steps
+      - name: Pre-Commit
+        env:
+          # Found these unreliable in CI 17/1/25
+          SKIP: "mypy, pytest, uv-lock"
+        run: uv run pre-commit run --all-files
+      - name: MyPy
+        run: uv run mypy .
+
+  PublishPackage:
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+    permissions:
+      id-token: write
+      contents: read
+    if: startsWith(github.ref, 'refs/tags/')  # only publish to PyPI on tag pushes
+    needs:
+      - BuildPackage
+      - CodeLinting
+    steps:
+        # Setup
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Install UV
+        uses: astral-sh/setup-uv@v7
+        # Download Build
+      - name: Download Build Dist
+        uses: actions/download-artifact@v5
+        with:
+          name: build_artifacts
+        # Publish Steps
+      - name: Publish
+        run: uv publish --dry-run
