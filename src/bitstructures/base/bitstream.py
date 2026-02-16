@@ -65,8 +65,8 @@ class BitStream:
 
     def __repr__(self) -> str:
         if len(self) % 8 == 0:
-            return f"BitBuffer({bytes(self)!r})"
-        return f"BitBuffer(0b{self.bin})"
+            return f"{self.__class__.__name__}({bytes(self)!r})"
+        return f"{self.__class__.__name__}(0b{self.bin})"
 
     def __len__(self) -> int:
         return len(self.bitarray)
@@ -78,7 +78,7 @@ class BitStream:
         return BitStream(self.bitarray[s])
 
     def __hash__(self) -> int:
-        return hash(self.bitarray)
+        return hash(self.bin)
 
     def __eq__(self, other: object) -> bool:
         if isinstance(other, SupportsBitArray):

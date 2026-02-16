@@ -237,6 +237,14 @@ class Container[VT: Any = Any]:  # Can't use FrozenSlots here due to __getattr__
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.__deque!r})"
 
+    def __hash__(self) -> int:
+        return hash(tuple(self.__deque))
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Container):
+            return False
+        return self.__deque == other.__deque
+
     # CUSTOM GETATTR
 
     def set_parent(self, parent: "Container") -> None:
