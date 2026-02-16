@@ -1,5 +1,9 @@
 # BitStructures
 
+> [!note]
+> This is a copy of the current repo here [BitStructures](https://github.com/WibblyGhost/BitStructures), feel free to modify this repo.
+> If any issues are found I would appreciate you also raising an issue there if you feel it regards Codec errors.
+
 ## Intro
 
 This package was inspired by many byte level decoders and structure packing that were made for python, many of them didn't really handle bit streams directly.
@@ -20,13 +24,13 @@ If raising an issue please include the following:
 
 ## Development
 
-This project uses Astral-UV as it's package manager, Astral-Ruff as code linting and formatting and MyPy for type checking. Start by cloning down this repo, the running a `uv sync` and `pre-commit install`.
+This project uses UV as its package manager, Ruff for code linting and formatting, and MyPy for type checking. Start by cloning down this repo, then running `uv sync` and `pre-commit install`.
 
 Create a custom `test.py` file under the `src/` directory to test out changes and custom codecs.
 
-### MR's
+### MRs
 
-Feel free to give this repo a fork and apply modifications/customisation to it. Upon wanting changes modified in the main repo firstly raise a discussion with me on what you propose to change and we can continue from there.
+Feel free to fork this repo and apply modifications/customization to it. Upon wanting changes modified in the main repo firstly raise a discussion with me on what you propose to change and we can continue from there.
 
 <!-- TODO: Move this README to a WIKI page -->
 
@@ -37,44 +41,50 @@ TODO:
 
 ## Supporting Classes
 
-The encoders/decoders handle *key, value* pairs by pushing them onto a stack, rather that using a dictionary at this helps with error detection and ordering.
+### BitStream
+
+`BitStream` is a custom IO buffer class which works on [`bitarray`](https://github.com/ilanschnell/bitarray) objects.
+Taking in a bytes/bits buffer type and creating a buffer to read and write upon.
+This class contains many methods to make it easier to convert between bits and integers or bytes.
+Writing and reading to/from the stream modifies the underlying buffer.
+
+```python
+class BitStream:
+    """Custom IO class which converts a bytestream into a bitstream with read and write methods."""
+    bitarray: bitarray
+    def __init__(self, buffer: bytes | bitarray | str = b'', *, size: int = -1) -> None: ...
+    def peek(self, size: int) -> BitStream: ...
+    def read(self, size: int | None = -1) -> BitStream: ...
+    def write(self, value: int | BitStream, size: int) -> None: ...
+    def copy(self) -> Self: ...
+    @property
+    def bin(self) -> str: ...
+    def __len__(self) -> int: ...
+    def __int__(self) -> int: ...
+    def __bytes__(self) -> bytes: ...
+```
+
+### Stacks & Values
+
+The encoders/decoders handle *key, value* pairs by pushing them onto a stack, rather than using a dictionary, which helps with error detection and ordering.
 Each *key, value* pair is assigned a `Value(name, item, size)` class which makes it easy at computation time to determine the size of objects and where it went wrong when encoding/decoding patterns.
 
 ```python
 @dataclass(slots=True, frozen=True)
 class Value:
+    """
+    Dataclass which stores all the information about the current encoded/decoded value,
+    this will get passed around all the parse functions and contains name, size and values.
+    """
     name: str
     v_item: ValueType
     size: int = field(default=-1, compare=False, hash=False)
+    def pprint(self) -> str: ...
 ```
 
-There are two types of stacks, one for the values `StackV` or `Stack[Value]` and one for Structures `StackC` or `Stack[Codec]`.
-All stacks have definitions for pushing, setting, clearing, popping and freezing the stack.
-They both have extended functions to help with recursive stacks, pretty printing and retreiving raw IO.
-There is also a parent component which allows attaching parent stack's to the class for advanced parsing via `container._.item`.
-
-```python
-class Stack[T: SupportsName](FrozenSlots):
-    items: list[T]
-    def pop(self, index: SupportsIndex = -1) -> T: ...
-    def set(self, index: SupportsIndex, value: T) -> None: ...
-    def empty(self) -> bool: ...
-    def push(self, item: T) -> None: ...
-    def attach_parent(self, parent: Stack[T]) -> None: ...
-    @property
-    def _(self) -> Stack[T]:
-        """
-        Used to retrieve the parent stack if the structure isn't embedded.
-
-        | opcode
-        | --|
-            | Switch(lambda packet: packet._.opcode, ...)
-        """
-    def enumerate(self) -> Generator[tuple[int, T]]: ...
-```
-
-Containers are essentially dictionaries that wrap any output from this modul with
-additional indexing properties and pretty print statements.
+Containers are essentially glorified `deque`'s which have dictionary getter and setter methods, whilst also including some additional attribute access functionality.
+Meaning that you can access the items of the Container with direct `container.item` analogy, upon failure to find an attribute it will search the underlying data store for that attribute too.
+This class can be set as frozen to disallow any modifications and deletions to the object, and has a nice **pretty print** function built in.
 
 ```python
 
@@ -91,6 +101,32 @@ class Container[T: Any = Any](MutableMapping[str, T]):
     def pprint(self, *, padding: str = "\t{t}{v:-^38}{t}\n", depth: int = 1) -> str: ...
 ```
 
+Stacks work off a base layer of the **list** to create stack functionality, which includes pushing items onto a stack and popping items off a stack.
+You can assign the type of the **Stack** using the `Stack[Value]` terminology.
+
+All stacks have definitions for pushing, setting, clearing, popping and freezing the stack.
+
+```python
+class Stack[T: SupportsName](FrozenSlots):
+    items: list[T]
+    def pop(self, index: SupportsIndex = -1) -> T: ...
+    def set(self, index: SupportsIndex, value: T) -> None: ...
+    def empty(self) -> bool: ...
+    def push(self, item: T) -> None: ...
+    def enumerate(self) -> Generator[tuple[int, T]]: ...
+```
+
+There is a subclassed version of the **Stack** called `StackC` which is specifically used during parsing and building to attach exception tracebacks.
+It contains all the previously parsed/built Codecs and the current Codec.
+There's also a **pretty print** function built into this Stack to help print out the Codec's and their sizes.
+
+```python
+class StackC(Stack["Codec | StackC"]):
+    """Version of the stack which contains methods for holding Codec's."""
+    name: str
+    def pprint(self, *, depth: int = 1) -> str: ...
+```
+
 EnumBase is just a wrapper for the Enum class which helps with string representations for the codecs.
 
 ```python
@@ -104,13 +140,13 @@ class EnumBase(Enum_):
 ## Codec
 
 Codecs are all defined from the base class `Codec` which provides:
-- All the needed base fucntions to decode byte streams into bit streams.
-- Subcodecs for any subclass to use as it's codec.
-- Sizes and defaut parsers like `Error` and `Pass` which are needed for conditional type `Codec`'s.
+- All the needed base functions to decode byte streams into bit streams.
+- Subcodecs for any subclass to use as its codec.
+- Sizes and default parsers like `Error` and `Pass` which are needed for conditional type `Codec`s.
 - Division functions to allow naming of the Codec.
 
 The `Codec` class is meant to be subclassed and built upon to create custom encoders/decoders.
-The following methods are meant to be overrided when subclassing.
+The following methods are meant to be overridden when subclassing.
 
 ```python
 class Codec(CodecProtocol):
@@ -158,12 +194,12 @@ class Codec(CodecProtocol):
         >>>> "name"
         """
     def rename(self, name: str) -> None: ...
-    def sizeof(self, parent: StackV | Container, codecs: StackC, io: IoType = None) -> int: ...
+    def sizeof(self, io: BitStream, context: Container, codecs: StackC) -> int: ...
 ```
 
 ### Defaults
 
-> [!NOTE] 
+> [!NOTE]
 > This section is different to the Default Codec type defined later down.
 
 Some `Codec`'s can take a *default* argument which will take a Singleton object of `Pass` or `Error`, if this default is triggered then it will either ignore the failed conditional or error out of building/parsing.
@@ -178,8 +214,7 @@ Simple codec that parses and builds to an empty string/container, useful if ther
 class Pass(Codec):
     """
     Declarer that this Codec *shouldn't* error when it fails to map,
-    this class will encode into a null terminated bitarray and
-    decode into an empty container.
+    this class will encode into a null terminated bitarray and skip decoding.
     """
 ```
 
@@ -195,7 +230,7 @@ class Error(Codec):
     """
 
     @classmethod
-    def raise_error(cls, parent: StackV, codecs: StackC, **kwargs: Any) -> NoReturn: ...
+    def raise_error(cls, io: BitStream, context: Container, codecs: StackC, **kwargs: Any) -> NoReturn: ...
 ```
 
 #### NotImplementedCodec
@@ -365,8 +400,8 @@ Core Codec which converts a bitstream into an unsigned integer.
 ```python
 class BitsInt(Codec):
     """
-    Defines a integer representation from the ConstBitStream,
-    will return an integer when parsing and takes ant int on building.
+    Defines an integer representation from the BitStream,
+    will return an integer when parsing and takes any int on building.
 
     >>> "int1" / BitInts(8)
     """
@@ -376,8 +411,8 @@ class BitsInt(Codec):
 
 #### Enum
 
-The Enum Codec is a BitsInt type which contains a string to integer mapping for it's parsed/built values.
-By default if a value cannot be mapped, it will raise an exception but this can be changed to ignore missing
+The Enum Codec is a BitsInt type which contains a string to integer mapping for its parsed/built values.
+By default, if a value cannot be mapped, it will raise an exception, but this can be changed to ignore missing
 mappings via the `default=Pass` keyword argument.
 
 ```python
@@ -405,7 +440,7 @@ class Enum(BitsInt):
 
 #### Mapping
 
-Works exactly the same as the Enum Codec except for the fact it takes a dictionary as it's initialisation.
+Works exactly the same as the Enum Codec except that it takes a dictionary as its initialization.
 
 ```python
 class Mapping(Enum):
@@ -480,7 +515,7 @@ class Default(Codec):
 
 #### Array
 
-Codec which allows parsing segments of the IO stream into a lists of values, 
+Codec which allows parsing segments of the IO stream into a lists of values,
 this is done by assigning a codec and count amount.
 
 The *count* argument can be an integer or a *lambda* expression.
@@ -538,7 +573,7 @@ class Computed[T: ValueType](Codec):
 
 #### Bitshift
 
-Useful for splitting and combining two different bit fields into one bit field, 
+Useful for splitting and combining two different bit fields into one bit field,
 meaning you can have codecs between the two integer parts then combine them into one field.
 
 
@@ -564,18 +599,17 @@ class Bitshift[T: Any = int](Codec):
 
 #### Checksum
 
-Checksum is a very special Codec type which will perfom a checksum calculations on your packet after building.
+Checksum is a very special Codec type which will perform checksum calculations on your packet after building.
 The fields to perform the checksum calculations must be listed and present before the checksum Codec.
 
 ```python
 class Checksum(BitsInt):
     """
     Used to add a calculated checksum value upon building a Codec.
-    This Codec will just a BitsInt.
 
     >>> Checksum(
             16,
-            crc=lambda value: crc_hqx(value, 0),
+            crc=lambda value: crc_hqx(value, 16),
             field_names={
                 "version",
                 "header_length",
@@ -639,7 +673,7 @@ class GreedyArray(Array):
 #### Greedy Bits
 
 Defines a Greedy bits consumer which will keep consuming the IO stream until an end of stream (EOS).
-The output value will be a `ConstBitStream` type. It works the same way as the `RawBits` Codec.
+The output value will be a `BitStream` type. It works the same way as the `RawBits` Codec.
 
 It can also take a *max_size* argument which will only parse the stream up to the specified length and no further.
 Or the *max_size* argument can take a *lambda* expression.
@@ -702,7 +736,7 @@ class Whitelisted(BitsInt):
     Only allows parsing/building a certain range of values, failing to do so
     will raise a WhitelistedError.
 
-    >>> "digit" = Whitelisted(8, list(range(34))
+    >>> "digit" = Whitelisted(8, list(range(34)))
     """
 
     def __init__(self, size: int, array: Iterable[int]) -> None: ...
@@ -710,7 +744,7 @@ class Whitelisted(BitsInt):
 
 ### Adapters
 
-Adapters are easier to subclass then a Codec due to their simplicity.
+Adapters are easier to subclass than a Codec due to their simplicity.
 They define a `decode` and `encode` function which will get called inside their respective `io_parse` and `io_build` functions.
 When subclassing these, you only need to add/modify the `decode` and `encode` functions.
 
@@ -724,13 +758,13 @@ class Adapter(Codec, AdapterProtocol):
     This class isn\'t used directly and is subclassed to create custom functions.
     The following two functions must be defined in the subclass:
 
-    def decode(self, parent: "StackV", codecs: "StackC", value: Any) -> Any: ...
-    def encode(self, parent: "StackV", codecs: "StackC", value: Any) -> Any: ...
+    def decode(self, context: Container, value: Any) -> Any: ...
+    def encode(self, context: Container, value: Any) -> Any: ...
     """
 
     def __init__(self, subcodec: Codec) -> None: ...
-    def decode(self, parent: StackV, codecs: StackC, value: int) -> str: ...
-    def encode(self, parent: StackV, codecs: StackC, value: str) -> int: ...
+    def decode(self, context: Container, value: Any) -> Any: ...
+    def encode(self, context: Container, value: Any) -> Any: ...
 ```
 
 #### IpAddress
@@ -810,7 +844,7 @@ IPV4_HEADER = Struct(
     "fragment_offset" / BitsInt(13),
     "ttl" / BitsInt(8),
     "protocol"
-    / Enumerate(
+    / Enum(
         8,
         ICMP=1,
         TCP=6,

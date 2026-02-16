@@ -1,14 +1,24 @@
 from typing import TYPE_CHECKING, Any
 
-from bitstring import ConstBitStream
-
 from bitstructures.typing import SupportsPPrint, SupportsSeek
 
 if TYPE_CHECKING:
-    from bitstructures.base.codec import Codec, Container, StackC, StackV
+    from bitstructures.base.bitstream import BitStream
+    from bitstructures.base.codec import Codec, StackC
+    from bitstructures.base.objects import Container
+    from bitstructures.typing import SupportsSeek
 
 
 class BitstructuresError(Exception): ...
+
+
+# ---- IO ERRORS ----
+
+
+class ReadError(BitstructuresError): ...
+
+
+class WriteError(BitstructuresError): ...
 
 
 # ---- BASIC ERRORS ----
@@ -35,17 +45,22 @@ def add_codec_to_traceback(codec: "Codec", stack: "StackC") -> None:
 
 
 class CodecError(BitstructuresError):
-    def __init__(self, parent: "StackV", codecs: "StackC", *args: object) -> None:
+    def __init__(
+        self, io: SupportsSeek, context: "Container", codecs: "StackC", *args: object
+    ) -> None:
         super().__init__(*args)
-        self.parent = parent
+        self.parent = context
         self.codecs = codecs
-        self.add_note(f"Packet Stack:\n{parent.pprint()}")
+        self.add_note(f"Peek(len={len(io)}): {io.bin}")
+        self.add_note(f"Packet Stack:\n{context!s}")
         self.add_note(f"Codec Stack:\n{codecs.pprint()}")
 
 
 class SizeOfError(CodecError):
-    def __init__(self, parent: "StackV | Container", codecs: "StackC", *args: object) -> None:
-        super().__init__(parent, codecs, *args)  # type: ignore[arg-type]
+    def __init__(
+        self, io: "BitStream", context: "Container", codecs: "StackC", *args: object
+    ) -> None:
+        super().__init__(io, context, codecs, *args)
 
 
 class StackError(CodecError): ...
@@ -75,32 +90,31 @@ class DecodeError(CodecError): ...
 class ParseError(CodecError):
     def __init__(
         self,
-        parent: "StackV",
+        io: SupportsSeek,
+        context: "Container",
         codecs: "StackC",
-        peek: SupportsSeek,
         *args: object,
-        raw: ConstBitStream | None = None,
+        raw: Any = None,
     ) -> None:
-        self.io = peek
-        super().__init__(parent, codecs, *args)
-        self.add_note(f"Peek(pos={peek.pos}, len={len(peek)}): 0b{peek.bin}")
+        super().__init__(io, context, codecs, *args)
         if raw is not None:
             self.add_note(f"Raw: {raw!r}")
 
 
-class BuildError(CodecError):
-    def __init__(
-        self, parent: "StackV", codecs: "StackC", container: "Container", *args: object
-    ) -> None:
-        super().__init__(parent, codecs, *args)
-        self.add_note(f"Container:\n{container.pprint()}")
+class BuildError(CodecError): ...
 
 
 class TriggeredError(CodecError):
     def __init__(
-        self, msg: str, parent: "StackV", codecs: "StackC", *args: object, **kwargs: Any
+        self,
+        msg: str,
+        io: "SupportsSeek",
+        context: "Container",
+        codecs: "StackC",
+        *args: object,
+        **kwargs: Any,
     ) -> None:
-        super().__init__(parent, codecs, msg, *args)
+        super().__init__(io, context, codecs, msg, *args)
         for key, value in kwargs.items():
             key_ = key.replace("_", " ").capitalize()
             if isinstance(value, SupportsPPrint):

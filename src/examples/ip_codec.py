@@ -46,8 +46,7 @@ IPV4_HEADER = Struct(
     ),
     "total_length" / BitsInt(16),
     "identification" / BitsInt(16),
-    "flags"
-    / Struct(Padding(1), "dont_fragment" / Flag(), "more_fragments" / Flag()),
+    "flags" / Struct(Padding(1), "dont_fragment" / Flag(), "more_fragments" / Flag()),
     "fragment_offset" / BitsInt(13),
     "ttl" / BitsInt(8),
     "protocol"
@@ -108,9 +107,7 @@ UDP_HEADER = Struct(
 IP_PACKET = Struct(
     IPV4_HEADER,
     "header"
-    / Switch[str, Codec](
-        lambda packet: packet.protocol, {"UDP": UDP_HEADER, "TCP": TCP_HEADER}
-    ),
+    / Switch[str, Codec](lambda packet: packet.protocol, {"UDP": UDP_HEADER, "TCP": TCP_HEADER}),
     "payload" / GreedyBits(),
 )
 

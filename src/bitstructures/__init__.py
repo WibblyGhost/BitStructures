@@ -1,8 +1,8 @@
 __all__ = [
     "Adapter",
     "Array",
+    "BitStream",
     "BitsInt",
-    "Bitshift",
     "Bitshift",
     "Blacklisted",
     "Checksum",
@@ -11,9 +11,9 @@ __all__ = [
     "Conditional",
     "Const",
     "Container",
-    "ContainerType",
     "Default",
     "DefaultType",
+    "Deque",
     "Enum",
     "EnumBase",
     "Error",
@@ -32,10 +32,9 @@ __all__ = [
     "Pass",
     "Pointer",
     "RawBits",
-    "ReadIoType",
     "Scaler",
+    "Stack",
     "StackC",
-    "StackV",
     "Struct",
     "Switch",
     "Value",
@@ -46,6 +45,7 @@ __all__ = [
     "reverse_bitshift",
 ]
 from bitstructures.adaptors.adapters import Adapter, ExprAdapter, IpAddress, Scaler
+from bitstructures.base.bitstream import BitStream
 from bitstructures.base.codec import (
     Array,
     Bitshift,
@@ -55,10 +55,8 @@ from bitstructures.base.codec import (
     Computed,
     Conditional,
     Const,
-    Container,
     Default,
     Enum,
-    EnumBase,
     Error,
     Flag,
     GreedyArray,
@@ -71,20 +69,10 @@ from bitstructures.base.codec import (
     Pointer,
     RawBits,
     StackC,
-    StackV,
     Struct,
     Switch,
-    Value,
 )
+from bitstructures.base.objects import Container, Deque, EnumBase, Stack, Value
 from bitstructures.helpers import bitshift, reverse_bitshift
-from bitstructures.typing import (
-    ContainerType,
-    DefaultType,
-    ExpType,
-    FunctType,
-    IoType,
-    ReadIoType,
-    ValueType,
-    WriteIoType,
-)
+from bitstructures.typing import DefaultType, ExpType, FunctType, ValueType, WriteIoType
 from bitstructures.validators.validators import Blacklisted, Whitelisted

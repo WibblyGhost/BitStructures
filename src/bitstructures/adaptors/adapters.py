@@ -1,9 +1,9 @@
 from ipaddress import IPv4Address
 from typing import Any, override
 
-from bitstring import ConstBitStream
-
-from bitstructures.base.codec import BitsInt, Codec, Container, StackC, StackV, Value
+from bitstructures.base.bitstream import BitStream
+from bitstructures.base.codec import BitsInt, Codec, StackC
+from bitstructures.base.objects import Container
 from bitstructures.exceptions import CodecError, DecodeError, EncodeError, add_codec_to_traceback
 from bitstructures.typing import AdapterProtocol, ExpType
 
@@ -19,8 +19,8 @@ class Adapter(Codec, AdapterProtocol):
     This class isn't used directly and is subclassed to create custom functions.
     The following two functions must be defined in the subclass:
 
-    def decode(self, parent: "StackV", codecs: "StackC", value: Any) -> Any: ...
-    def encode(self, parent: "StackV", codecs: "StackC", value: Any) -> Any: ...
+    def decode(self, parent: "Container", codecs: "StackC", value: Any) -> Any: ...
+    def encode(self, parent: "Container", codecs: "StackC", value: Any) -> Any: ...
     """
 
     @override
@@ -28,38 +28,38 @@ class Adapter(Codec, AdapterProtocol):
         super().__init__(subcodec)
 
     @override
-    def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
+    def io_parse(self, io: BitStream, context: Container, codecs: StackC) -> None:
         add_codec_to_traceback(self, codecs)
 
-        self.subcodec.io_parse(parent, codecs, io)
-        sn, value = parent.get(self.subcodec.name)
+        self.subcodec.io_parse(io, context, codecs)
+        c_value = context[self.subcodec.name]
         try:
-            decoded = self.decode(parent, codecs, value.v_item)
+            decoded = self.decode(context, c_value)
         except CodecError:
             raise  # These errors already have our traceback
         except Exception as err:
-            raise DecodeError(parent, codecs) from err
-        parent.set(sn, Value(value.name, decoded, value.size))
+            raise DecodeError(io, context, codecs) from err
+        context.set(self.subcodec.name, decoded)
 
     @override
-    def io_build(self, parent: StackV, codecs: StackC, container: Container) -> None:
+    def io_build(self, io: BitStream, context: Container, codecs: StackC) -> None:
         add_codec_to_traceback(self, codecs)
 
-        c_value = container[self.name]
+        c_value = context[self.name]
         try:
-            encoded = self.encode(parent, codecs, c_value)
+            encoded = self.encode(context, c_value)
         except CodecError:
             raise  # These errors already have our traceback
         except Exception as err:
-            raise EncodeError(parent, codecs) from err
-        container.set(self.name, encoded, ignore_frozen=True)
-        self.subcodec.io_build(parent, codecs, container)
+            raise EncodeError(io, context, codecs) from err
+        context.set(self.name, encoded)
+        self.subcodec.io_build(io, context, codecs)
 
 
 # ---------------- Adapters ----------------
 
 
-class IpAddress(Adapter):
+class IpAddress(Adapter, AdapterProtocol):
     """
     Converts an integer into an IP Address and vice versa, this is usually a 32 bit field.
 
@@ -67,15 +67,15 @@ class IpAddress(Adapter):
     """
 
     @override
-    def decode(self, parent: StackV, codecs: StackC, value: int) -> str:
+    def decode(self, context: Container, value: int) -> str:
         return str(IPv4Address(value))
 
     @override
-    def encode(self, parent: StackV, codecs: StackC, value: str) -> int:
+    def encode(self, context: Container, value: str) -> int:
         return int(IPv4Address(value))
 
 
-class Scaler(Adapter):
+class Scaler(Adapter, AdapterProtocol):
     """
     Simple adapter which multiplies the encoded/decoded value by an integer factor.
 
@@ -93,15 +93,15 @@ class Scaler(Adapter):
         self._factor = factor
 
     @override
-    def decode(self, parent: StackV, codecs: StackC, value: float) -> float:
+    def decode(self, context: Container, value: float) -> float:
         return value * self._factor
 
     @override
-    def encode(self, parent: StackV, codecs: StackC, value: float) -> float:
+    def encode(self, context: Container, value: float) -> float:
         return int(value / self._factor)
 
 
-class ExprAdapter(Adapter):
+class ExprAdapter(Adapter, AdapterProtocol):
     """
     Simple adapter that takes lambda's as the encoders and decoders.
 
@@ -119,9 +119,9 @@ class ExprAdapter(Adapter):
         self._decode = decoder
 
     @override
-    def decode(self, parent: StackV, codecs: StackC, value: Any) -> Any:
+    def decode(self, context: Container, value: Any) -> Any:
         return self._decode(value)
 
     @override
-    def encode(self, parent: StackV, codecs: StackC, value: Any) -> Any:
+    def encode(self, context: Container, value: Any) -> Any:
         return self._encode(value)

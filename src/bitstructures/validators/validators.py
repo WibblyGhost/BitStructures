@@ -1,9 +1,9 @@
 from collections.abc import Iterable
 from typing import override
 
-from bitstring import ConstBitStream
-
-from bitstructures.base.codec import BitsInt, Container, StackC, StackV, Value
+from bitstructures.base.bitstream import BitStream
+from bitstructures.base.codec import BitsInt, StackC
+from bitstructures.base.objects import Container
 from bitstructures.exceptions import BlacklistError, WhitelistError, add_codec_to_traceback
 
 
@@ -21,31 +21,34 @@ class Blacklisted(BitsInt):
         self._array = array
 
     @override
-    def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
+    def io_parse(self, io: BitStream, context: Container, codecs: StackC) -> None:
         add_codec_to_traceback(self, codecs)
 
-        value, size = self._read_io(parent, codecs, io)
-        if value.uint in self._array:
+        stream = self._read_io(io, context, codecs)
+        value = int(stream)
+        if value in self._array:
             raise BlacklistError(
-                parent,
+                io,
+                context,
                 codecs,
                 f"Cannot parse value {value} as it's listed "
                 f"in the blacklisted values {self._array}",
             )
-        parent.push(Value(self.name, value.uint, size))
+        context[self.name] = value
 
     @override
-    def io_build(self, parent: StackV, codecs: StackC, container: Container) -> None:
+    def io_build(self, io: BitStream, context: Container, codecs: StackC) -> None:
         add_codec_to_traceback(self, codecs)
 
-        if (value := container[self.name]) in self._array:
+        if (value := context[self.name]) in self._array:
             raise BlacklistError(
-                parent,
+                io,
+                context,
                 codecs,
                 f"Cannot build value {value} as it's listed "
                 f"in the blacklisted values {self._array}",
             )
-        super().io_build(parent, codecs, container)
+        super().io_build(io, context, codecs)
 
 
 class Whitelisted(BitsInt):
@@ -53,7 +56,7 @@ class Whitelisted(BitsInt):
     Only allows parsing/building a certain range of values, failing to do so
     will raise a WhitelistedError.
 
-    >>> "digit" = Whitelisted(8, list(range(34))
+    >>> "digit" = Whitelisted(8, list(range(34)))
     """
 
     @override
@@ -62,28 +65,31 @@ class Whitelisted(BitsInt):
         self._array = array
 
     @override
-    def io_parse(self, parent: StackV, codecs: StackC, io: ConstBitStream) -> None:
+    def io_parse(self, io: BitStream, context: Container, codecs: StackC) -> None:
         add_codec_to_traceback(self, codecs)
 
-        value, size = self._read_io(parent, codecs, io)
-        if value.uint not in self._array:
+        stream = self._read_io(io, context, codecs)
+        value = int(stream)
+        if value not in self._array:
             raise WhitelistError(
-                parent,
+                io,
+                context,
                 codecs,
                 f"Cannot parse value {value} as it's not "
                 f"listed as a whitelisted value {self._array}",
             )
-        parent.push(Value(self.name, value.uint, size))
+        context[self.name] = value
 
     @override
-    def io_build(self, parent: StackV, codecs: StackC, container: Container) -> None:
+    def io_build(self, io: BitStream, context: Container, codecs: StackC) -> None:
         add_codec_to_traceback(self, codecs)
 
-        if (value := container[self.name]) not in self._array:
+        if (value := context[self.name]) not in self._array:
             raise WhitelistError(
-                parent,
+                io,
+                context,
                 codecs,
                 f"Cannot build value {value} as it's not listed "
                 f"as a whitelisted value {self._array}",
             )
-        super().io_build(parent, codecs, container)
+        super().io_build(io, context, codecs)
