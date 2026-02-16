@@ -2,11 +2,19 @@
 
 ## Intro
 
-This package was inspired by many byte level decoders and structure packing that were made for python, many of them didn't really handle bit streams directly.
-Many packages I came across had a large list of outstanding issues and weren't updated in years.
-So I decided to make a package that does exactly this, making it easy to define structural patterns to define network payloads on the bit level.
+This package was inspired by many byte level decoders and structure packing packages that were made for python.
 
-Running in **Python-3.13.xx** and greater with new type support for the structures and classes that help classify the built and parsed data. Making it easy to see what data is getting processed, the size of the data and what we are trying to write. There are also methods to present the structure in a human readable form.
+Reasons for implementing my own package here:
+- Many of the current packages didn't really handle bit streams directly.
+- Many packages I came across had a large list of outstanding issues and weren't updated in years.
+- Several were difficult to debug, with little to no traceback information upon failure.
+- Some packages had large overheads with code support dating back to **Python 2**, we're in the future now buddies!
+
+So I decided to make a package that does exactly this, making it easy to define structural patterns to define network payloads on the bit level.
+Whilst also providing nice new *generics* type support, great readability of the codebase and traceback information upon failure to parse/build.
+Making it easy to see what data is getting processed, the size of the data and what we are trying to write.
+There are also methods to present the structure in a human readable form, `.pprint()` or **Pretty Print**.
+There is only one dependency in this package on [`bitarray`](https://github.com/ilanschnell/bitarray), everything else is designed in house, keeping code fast and dependant.
 
 ## Issues/Discussions
 
