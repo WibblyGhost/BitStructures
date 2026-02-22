@@ -1,9 +1,5 @@
 # BitStructures
 
-> [!note]
-> This is a copy of the current repo here [BitStructures](https://github.com/WibblyGhost/BitStructures), feel free to modify this repo.
-> If any issues are found I would appreciate you also raising an issue there if you feel it regards Codec errors.
-
 ## Intro
 
 This package was inspired by many byte level decoders and structure packing that were made for python, many of them didn't really handle bit streams directly.
