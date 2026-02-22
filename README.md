@@ -1,20 +1,16 @@
 # BitStructures
 
+> [!note]
+> This is a copy of the current repo here [BitStructures](https://github.com/WibblyGhost/BitStructures), feel free to modify this repo.
+> If any issues are found I would appreciate you also raising an issue there if you feel it regards Codec errors.
+
 ## Intro
 
-This package was inspired by many byte level decoders and structure packing packages that were made for python.
-
-Reasons for implementing my own package here:
-- Many of the current packages didn't really handle bit streams directly.
-- Many packages I came across had a large list of outstanding issues and weren't updated in years.
-- Several were difficult to debug, with little to no traceback information upon failure.
-- Some packages had large overheads with code support dating back to **Python 2**, we're in the future now buddies!
-
+This package was inspired by many byte level decoders and structure packing that were made for python, many of them didn't really handle bit streams directly.
+Many packages I came across had a large list of outstanding issues and weren't updated in years.
 So I decided to make a package that does exactly this, making it easy to define structural patterns to define network payloads on the bit level.
-Whilst also providing nice new *generics* type support, great readability of the codebase and traceback information upon failure to parse/build.
-Making it easy to see what data is getting processed, the size of the data and what we are trying to write.
-There are also methods to present the structure in a human readable form, `.pprint()` or **Pretty Print**.
-There is only one dependency in this package on [`bitarray`](https://github.com/ilanschnell/bitarray), everything else is designed in house, keeping code fast and dependant.
+
+Running in **Python-3.13.xx** and greater with new type support for the structures and classes that help classify the built and parsed data. Making it easy to see what data is getting processed, the size of the data and what we are trying to write. There are also methods to present the structure in a human readable form.
 
 ## Issues/Discussions
 
@@ -47,7 +43,7 @@ TODO:
 
 ### BitStream
 
-`BitStream` is a custom IO buffer class which works on [`bitarray`](https://github.com/ilanschnell/bitarray) objects.
+`BitStream` is a custom IO buffer class which works on a `str` base.
 Taking in a bytes/bits buffer type and creating a buffer to read and write upon.
 This class contains many methods to make it easier to convert between bits and integers or bytes.
 Writing and reading to/from the stream modifies the underlying buffer.
@@ -55,17 +51,18 @@ Writing and reading to/from the stream modifies the underlying buffer.
 ```python
 class BitStream:
     """Custom IO class which converts a bytestream into a bitstream with read and write methods."""
-    bitarray: bitarray
-    def __init__(self, buffer: bytes | bitarray | str = b'', *, size: int = -1) -> None: ...
+    stream: str
+    @property
+    def bin(self) -> str: ...
+    def __init__(self, buffer: bytes | str = b"", /) -> None:
+    def __len__(self) -> int: ...
+    def __int__(self) -> int: ...
+    def __bytes__(self) -> bytes: ...
     def peek(self, size: int) -> BitStream: ...
     def read(self, size: int | None = -1) -> BitStream: ...
     def write(self, value: int | BitStream, size: int) -> None: ...
     def copy(self) -> Self: ...
-    @property
-    def bin(self) -> str: ...
-    def __len__(self) -> int: ...
-    def __int__(self) -> int: ...
-    def __bytes__(self) -> bytes: ...
+    def bit_length(self) -> int: ...
 ```
 
 ### Stacks & Values
@@ -86,13 +83,13 @@ class Value:
     def pprint(self) -> str: ...
 ```
 
-Containers are essentially glorified `deque`'s which have dictionary getter and setter methods, whilst also including some additional attribute access functionality.
+Containers use an `OrderedDict` underneath, whilst also including some additional attribute access functionality.
 Meaning that you can access the items of the Container with direct `container.item` analogy, upon failure to find an attribute it will search the underlying data store for that attribute too.
 This class can be set as frozen to disallow any modifications and deletions to the object, and has a nice **pretty print** function built in.
 
 ```python
 
-class Container[T: Any = Any](MutableMapping[str, T]):
+class Container[VT: Any = Any]:
     """
     Wrapper for a dictionary-like object, we use this to add extra functionality to
     the container indexing, and adding frozen attributes to the setters.
@@ -218,7 +215,7 @@ Simple codec that parses and builds to an empty string/container, useful if ther
 class Pass(Codec):
     """
     Declarer that this Codec *shouldn't* error when it fails to map,
-    this class will encode into a null terminated bitarray and skip decoding.
+    this class will encode into a null terminated bitstream and skip decoding.
     """
 ```
 
@@ -909,3 +906,10 @@ IP_PACKET = Struct(
     "payload" / GreedyBits(),
 )
 ```
+
+## Considerations
+
+Whilst building this package, here's a few decisions and thoughts I had:
+
+Originally I was going to use [bitstring](https://pypi.org/project/bitstring/) which looked reasonable but I found the parse/build speed slow.
+Then I checked out [bitarray](https://pypi.org/project/bitarray/) which used C DLL's to efficiently work on boolean arrays, this was quite effective and I was using this package as our base for a while. However after a variety of testing their speeds and footprints, I actually discovered that storing the bitstream as a string was actually the fastest way of handling our streams. I even considered using the StringIO and BytesIO builtin packages.

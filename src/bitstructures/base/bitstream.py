@@ -1,34 +1,134 @@
 from typing import Any, Self
 
-from bitarray import bitarray
-
-from bitstructures.exceptions import InitError, ReadError, SizeError, WriteError
-from bitstructures.typing import SupportsBitArray
+from bitstructures.exceptions import ReadError, SizeError, WriteError
 
 
 class BitStream:
-    """Custom IO class which converts a bytestream into a bitstream with read and write methods."""
+    """
+    Custom IO class which converts a bytestream into a bitstream with read and write methods.
 
-    def __init__(self, buffer: bytes | bitarray | str = b"", *, size: int = -1) -> None:
-        if isinstance(buffer, str) and buffer.startswith("0b"):
-            buffer = buffer.removeprefix("0b")
+    Makes use of a string as it's buffer to keep object access fast and efficient.
+    Noting that some of the methods must read the whole buffer object.
 
-        if not isinstance(buffer, bytes | bitarray | str):
-            raise InitError(
-                f"Cannot initialize a {self.__class__.__name__} "
-                f"with a buffer type of {type(buffer)}, expected {bytes | bitarray | str}"
-            )
+    `peek`, `read`, `write` and `length` are all functions which work on the active buffer
+    instead of reading the memory object.
+    """
 
-        if size > 0:
-            self.bitarray = bitarray(size)
-            self += buffer
+    def __init__(self, buffer: bytes | str = b"", /) -> None:
+        if isinstance(buffer, str):
+            # Strings, '0b1001' or '1001'
+            buffer = self._validate_string(buffer)
+            self._size = len(buffer)
+            self.stream = buffer
             return
-        self.bitarray = bitarray(buffer)
+
+        # Bytes, b'\x01\x02'
+        self._size = len(buffer * 8)
+        self.stream = "".join(bin(b)[2:].zfill(8) for b in buffer)
+
+    @staticmethod
+    def _validate_string(string: str) -> str:
+        string = string.removeprefix("0b")
+        if not all(i in {"0", "1"} for i in string):
+            raise TypeError("Buffer can only contain binary integers: 0's/1's")
+        return string
+
+    @property
+    def bin(self) -> str:
+        """Gets a binary representation by reading the string buffer."""
+        return f"0b{self.stream}"
+
+    def __str__(self) -> str:
+        """
+        Returns a nicely formatted representation of the underlying buffer,
+        if this object is divisable by 8 (a byte) then it will show bytes as it's
+        string representation.
+        """
+        if len(self) % 8 == 0:
+            return repr(bytes(self))
+        return f"0b{self.bin}"
+
+    def __repr__(self) -> str:
+        """
+        Returns a nicely formatted representation of the underlying buffer,
+        if this object is divisable by 8 (a byte) then it will show bytes as it's
+        string representation.
+        """
+        if len(self) % 8 == 0:
+            return f"{self.__class__.__name__}({bytes(self)!r})"
+        return f"{self.__class__.__name__}(0b{self.bin})"
+
+    def __len__(self) -> int:
+        """Returns the bit size of the current object."""
+        return self._size
+
+    def __int__(self) -> int:
+        """
+        Converts the buffer into an integer representation, this
+        could lead to an integer overflow if you attempt to read
+        a buffer that is larger than the size of an integer.
+        """
+        return int(self.stream, 2)
+
+    def __bytes__(self) -> bytes:
+        """
+        Returns a bytestream from the string buffer by iterating through the buffer
+        and applying integer conversions on the string to convert to bytes.
+        """
+        if len(self) % 8 != 0:
+            raise SizeError(
+                f"Cannot convert a BitStream of length {len(self)} to bytes, must be divisable by 8"
+            )
+        i = 0
+        bytes_ = b""
+        while i < self._size:
+            bytes_ += int(self.stream[i : i + 8], 2).to_bytes()
+            i += 8
+        return bytes_
+
+    def __hash__(self) -> int:
+        """Provide hashing functionality to our bitstream."""
+        return hash(self.stream)
+
+    def __eq__(self, other: object) -> bool:
+        """
+        Checks if the string buffer is the same as the other object,
+        if the other object is bytes | str, convert it to a buffer first.
+        """
+        if isinstance(other, BitStream):
+            return self.stream == other.stream
+        if isinstance(other, bytes | str):
+            # Recurse into the above statement
+            return self == BitStream(other)
+        raise TypeError(f"Cannot compare a {self.__class__.__name__} with a {type(other)}")
+
+    def __add__(self, other: Any) -> Self:
+        """
+        Append another string buffer into this buffer by writing the
+        contents of the other buffer into our StringIO instance.
+        """
+        if isinstance(other, BitStream):
+            self._size = self._size + other._size
+            self.stream = self.stream + other.stream
+        elif isinstance(other, bytes | str):
+            # Recurse into the above statement
+            self += BitStream(other)
+            return self
+        else:
+            raise TypeError(f"Cannot add {type(other)} to a {BitStream.__name__}")
+        return self
+
+    def __getitem__(self, s: slice) -> "BitStream":
+        """Allow string slicing methods upon this class."""
+        return BitStream(self.stream[s])
 
     def peek(self, size: int) -> "BitStream":
-        return BitStream(self.bitarray[:size])
+        """Looks through the string buffer without modifying the stream."""
+        stream = self.stream[:size]
+        return BitStream(stream)
 
     def read(self, size: int | None = -1) -> "BitStream":
+        """Reads a specified amount of bits through the string buffer modifying the stream."""
         if size is None or size < 0:
             return self
         if size > len(self):
@@ -37,83 +137,35 @@ class BitStream:
                 f"the current stream is shorter that specified size. stream={len(self)}"
             )
         try:
-            raw, self.bitarray = self.bitarray[:size], self.bitarray[size:]
-            return BitStream(raw)
+            # Modify the stream buffer
+            self._size -= size
+            out, self.stream = self.stream[:size], self.stream[size:]
+            return BitStream(out)
         except Exception as err:
             raise ReadError from err
 
     def write(self, value: "int | BitStream", size: int) -> None:
+        """
+        Writes values or bit buffers of a specified bit size
+        through the string buffer modifying the stream.
+        """
+        if value.bit_length() > size:
+            raise WriteError(
+                f"Cannot write value {value} of size {value.bit_length()} "
+                f"into a stream of size {size}"
+            )
         try:
             if isinstance(value, BitStream):
-                self.bitarray += value.bitarray
+                self += value
                 return
-            self.bitarray += bitarray(bin(value)[2:].rjust(size, "0"))
+            self += f"{value:b}".zfill(size)
         except Exception as err:
             raise WriteError from err
 
     def copy(self) -> Self:
-        return self.__class__(self.bitarray.copy())
+        """Returns a complete copy of the underlying bitstring and assigns it to a new object."""
+        return self.__class__(self.stream)
 
-    @property
-    def bin(self) -> str:
-        return self.bitarray.to01()
-
-    def __str__(self) -> str:
-        if len(self) % 8 == 0:
-            return repr(bytes(self))
-        return f"0b{self.bin}"
-
-    def __repr__(self) -> str:
-        if len(self) % 8 == 0:
-            return f"{self.__class__.__name__}({bytes(self)!r})"
-        return f"{self.__class__.__name__}(0b{self.bin})"
-
-    def __len__(self) -> int:
-        return len(self.bitarray)
-
-    def __int__(self) -> int:
-        return int(self.bin, 2)
-
-    def __getitem__(self, s: slice) -> "BitStream":
-        return BitStream(self.bitarray[s])
-
-    def __hash__(self) -> int:
-        return hash(self.bin)
-
-    def __eq__(self, other: object) -> bool:
-        if isinstance(other, SupportsBitArray):
-            return self.bitarray == other.bitarray
-        if isinstance(other, bitarray):
-            return self.bitarray == other
-        if isinstance(other, bytes):
-            return self.bitarray == bitarray(other)
-        raise TypeError(f"Cannot compare a {self.__class__.__name__} with a {type(other)}")
-
-    def __add__(self, other: Any) -> Self:
-        if isinstance(other, SupportsBitArray):
-            self.bitarray += other.bitarray
-        elif isinstance(other, bitarray):
-            self.bitarray += other
-        elif isinstance(other, bytes):
-            self.bitarray += bitarray(other)
-        elif isinstance(other, str) and other.startswith("0b"):
-            self.bitarray += bitarray(other.removeprefix("0b"))
-        else:
-            raise TypeError(f"Cannot add {type(other)} to a {BitStream.__name__}")
-        return self
-
-    def __bytes__(self) -> bytes:
-        if len(self) % 8 != 0:
-            raise SizeError(
-                f"Cannot convert a BitStream of length {len(self)} to bytes, must be divisable by 8"
-            )
-        return self.bitarray.tobytes()
-
-
-if __name__ == "__main__":
-    bits = BitStream(b"\xff\xdd")
-    stream = bits.read(7)
-    bits.write(24, 8)
-    int(stream)
-    str(bits)
-    repr(bits)
+    def bit_length(self) -> int:
+        """Just returns the len of this BitStream, meant to mirror int.bit_length()."""
+        return len(self)

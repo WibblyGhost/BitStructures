@@ -13,7 +13,6 @@ __all__ = [
     "Container",
     "Default",
     "DefaultType",
-    "Deque",
     "Enum",
     "EnumBase",
     "Error",
@@ -72,7 +71,7 @@ from bitstructures.base.codec import (
     Struct,
     Switch,
 )
-from bitstructures.base.objects import Container, Deque, EnumBase, Stack, Value
+from bitstructures.base.objects import Container, EnumBase, Stack, Value
 from bitstructures.helpers import bitshift, reverse_bitshift
 from bitstructures.typing import DefaultType, ExpType, FunctType, ValueType, WriteIoType
 from bitstructures.validators.validators import Blacklisted, Whitelisted

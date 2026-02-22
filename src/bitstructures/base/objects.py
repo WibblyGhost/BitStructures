@@ -1,13 +1,13 @@
-from collections import deque
-from collections.abc import Generator, Iterable, Iterator
+from collections import OrderedDict
+from collections.abc import Generator, Iterator
 from dataclasses import dataclass, field
 from enum import Enum as Enum_
-from typing import Any, Self, SupportsIndex, overload, override
+from typing import Any, Self, SupportsIndex, override
 
 from bitstructures.base.bitstream import BitStream
 from bitstructures.constants import PP_DETENT, PP_INDENT, PP_TAB
 from bitstructures.exceptions import FrozenError, SizeError
-from bitstructures.typing import SupportsKeysAndGetItem, SupportsName, ValueType
+from bitstructures.typing import OrderedCollection, SupportsKeysAndGetItem, SupportsName, ValueType
 
 
 class FrozenSlots:
@@ -105,20 +105,7 @@ class Value:
         return self.size
 
 
-class Deque[VT](deque[tuple[str, VT]]):
-    """
-    Overrided version of the buildin deque class, which ONLY takes tuples containing
-    a str as the first argument.
-
-    **For direct use in the Container's only.**
-    """
-
-    @override
-    def __repr__(self) -> str:
-        return f"{dict(self)}"
-
-
-class Container[VT: Any = Any]:  # Can't use FrozenSlots here due to __getattr__
+class Container[VT: Any = Any](OrderedDict[str, VT]):
     """
     Wrapper for a dictionary-like object, we use this to add extra functionality to
     the container indexing, and adding frozen attributes to the setters.
@@ -127,59 +114,34 @@ class Container[VT: Any = Any]:  # Can't use FrozenSlots here due to __getattr__
     direct access `container.id`.
     """
 
-    __slots__ = ("__deque", "__frozen", "__parent")
-
     def __init__(
         self, dictionary: SupportsKeysAndGetItem[str, VT] | None = None, **kwargs: VT
     ) -> None:
-        self.__deque: Deque[VT] = Deque()
         self.__frozen: bool = False
         self.__parent: Container[VT] | None = None
-        if dictionary is not None:
-            for key, value in dictionary.items():
-                self.__deque.append((key, value))
-        if kwargs:
-            for key, value in kwargs.items():
-                self.__deque.append((key, value))
-        for key, value in self:
-            if isinstance(value, dict):
-                self[key] = Container(self[key])  # type: ignore[assignment]
+        if dictionary:
+            super().__init__(dictionary, **kwargs)
+        else:
+            super().__init__(**kwargs)
 
     def _check_frozen(self) -> None:
         if self.__frozen:
             raise FrozenError("Class is now frozen, cannot change attributes")
 
-    def __iter__(self) -> Iterator[tuple[str, VT]]:
-        return iter(self.__deque)
-
-    def __contains__(self, key: object) -> bool:
-        return any(kv == key for kv, _value in self.__deque)
-
-    def __len__(self) -> int:
-        return len(self.__deque)
+    def __iter__(self) -> Iterator[str]:
+        return super().__iter__()
 
     def __setitem__(self, key: str, value: VT, /) -> None:
         self._check_frozen()
-        for i, (kv, _v) in enumerate(self):
-            if key == kv:
-                self.__deque[i] = (kv, value)
-                return
-        self.__deque.append((key, value))
-
-    def __getitem__(self, key: str) -> VT:
-        for kv, v in self:
-            if kv == key:
-                return v
-        raise KeyError(key)
+        super().__setitem__(key, value)
 
     def __delitem__(self, key: str, /) -> None:
         self._check_frozen()
-        value = self[key]
-        self.__deque.remove((key, value))
+        super().__delitem__(key)
 
     def clear(self) -> None:
         self._check_frozen()
-        self.__deque.clear()
+        super().clear()
 
     def freeze(self) -> None:
         self.__frozen = True
@@ -188,37 +150,15 @@ class Container[VT: Any = Any]:  # Can't use FrozenSlots here due to __getattr__
         self.__frozen = False
 
     def copy(self) -> Self:
-        container = self.__class__()
-        for key, value in self:
-            container[key] = value
+        container = super().copy()
         if self.__frozen:
             container.freeze()
         return container
 
-    def values(self) -> Iterable[VT]:
-        for _k, v in self:
-            yield v
-
-    def keys(self) -> Iterable[str]:
-        for k, _v in self:
-            yield k
-
-    def items(self) -> Iterable[tuple[str, VT]]:
-        yield from self
-
-    @overload
-    def get(self, key: str, /) -> VT: ...
-
-    @overload
-    def get(self, key: str, default: Any = None, /) -> VT | Any: ...
-
-    def get(self, key: str, default: Any = None, /) -> VT | None | Any:
-        return self[key] if key in self else default  # noqa: SIM401  # This __is__ the .get() funct
-
     def set(self, key: str, value: VT) -> None:
         self[key] = value
 
-    def _rec_str(self, value: VT | Deque[VT]) -> Any:
+    def _rec_str(self, value: VT | OrderedCollection[VT]) -> Any:
         """Formats any nested Container's."""
         # RECURSIVE
         if isinstance(value, BitStream):
@@ -227,23 +167,24 @@ class Container[VT: Any = Any]:  # Can't use FrozenSlots here due to __getattr__
             return f"0b{value.bin}"
         if isinstance(value, list):
             return [self._rec_str(v) for v in value]
-        if isinstance(value, Container | Deque):
-            return {key: self._rec_str(value) for key, value in value if not key.startswith("__")}
+        if isinstance(value, Container | dict):
+            return {
+                key: self._rec_str(value)
+                for key, value in value.items()
+                if not key.startswith("__")
+            }
         return value
 
     def __str__(self) -> str:
-        return f"{self._rec_str(self.__deque)!s}"
+        return f"{self._rec_str(self)!s}"
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}({self.__deque!r})"
-
-    def __hash__(self) -> int:
-        return hash(tuple(self.__deque))
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, Container):
-            return False
-        return self.__deque == other.__deque
+        items = {
+            k: v
+            for k, v in self.items()
+            if not (k.startswith("__") or k.startswith(self.__class__.__name__))
+        }
+        return f"{self.__class__.__name__}({items!r})"
 
     # CUSTOM GETATTR
 
@@ -268,7 +209,7 @@ class Container[VT: Any = Any]:  # Can't use FrozenSlots here due to __getattr__
         Custom getattr method that also searches the dictionary for the attribute.
         Gets triggered upon failure to get attribute in the Self.
         """
-        if attr in self.__slots__:
+        if attr in self.__dict__:
             return object.__getattribute__(self, attr)
         if attr in self:
             return self[attr]
@@ -277,7 +218,7 @@ class Container[VT: Any = Any]:  # Can't use FrozenSlots here due to __getattr__
     def pprint(self, *, padding: str = "\t{t}{v:-^38}{t}\n", depth: int = 1) -> str:
         # RECURSIVE
         stack = ""
-        for key, value in self:
+        for key, value in self.items():
             container_str = f"{key}: {value}"
             if isinstance(value, Container):
                 # Contains nested values, e.g. a Container
@@ -313,11 +254,10 @@ class Stack[T: SupportsName](FrozenSlots):
     codec paths onto for parsing.
     """
 
-    __slots__ = ("_items", "_parent")
+    __slots__ = ("_items",)
 
     def __init__(self) -> None:
         self._items: list[T] = []
-        self._parent: Stack[T] | None = None
         super().__init__()
 
     def __str__(self) -> str:

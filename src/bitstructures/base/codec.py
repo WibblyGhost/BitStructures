@@ -3,8 +3,6 @@ from contextlib import suppress
 from copy import deepcopy
 from typing import Any, ClassVar, NoReturn, Protocol, Self, override
 
-from bitarray import bitarray
-
 from bitstructures.base.bitstream import BitStream
 from bitstructures.base.objects import Container, EnumBase, Stack, Value
 from bitstructures.constants import PP_DETENT, PP_INDENT, PP_TAB
@@ -228,7 +226,12 @@ class Codec(CodecProtocol):
             ) from err
 
     def _write_io(
-        self, io: BitStream, context: Container, codecs: StackC, value: WriteIoType
+        self,
+        io: BitStream,
+        context: Container,
+        codecs: StackC,
+        value: WriteIoType,
+        size: int,
     ) -> None:
         """
         Handles the reading of the BitStream's IO, raises a parsing error
@@ -243,16 +246,11 @@ class Codec(CodecProtocol):
         if isinstance(value, EnumBase):
             value = value.value
 
-        if isinstance(value, BitStream):
-            length = self.sizeof(value, context, codecs)
-        else:
-            length = self.sizeof(io, context, codecs)
-
-        if length == 0:
+        if size == 0:
             return
 
         try:
-            io.write(value, length)
+            io.write(value, size)
         except (WriteError, CodecError) as err:
             raise BuildError(
                 io,
@@ -269,7 +267,7 @@ class Codec(CodecProtocol):
 class _Pass(Codec, metaclass=SingletonMeta):
     """
     Declarer that this Codec *shouldn't* error when it fails to map,
-    this class will encode into a null terminated bitarray and skip decoding.
+    this class will encode into a null terminated bitstream and skip decoding.
     """
 
     __PRIVATE_NAME = "__pass"
@@ -442,8 +440,8 @@ class Struct(Codec, StructProtocol):
         codecs = StackC()
         add_codec_to_traceback(self, codecs)
 
+        io: BitStream = self._parse_io(raw)
         try:
-            io: BitStream = self._parse_io(raw)
             self.io_parse(io, context, codecs)
             if not context:
                 raise StackError(io, context, codecs, "Parsed stack is empty")
@@ -529,7 +527,7 @@ class Struct(Codec, StructProtocol):
         add_codec_to_traceback(self, codecs)
 
         io = BitStream()
-        # Copy container, and unfreeze this one (needed for IO setting operations on "__io")
+        # Copy container, and unfreeze this one (needed for IO setting operations)
         context = container.copy()
         context.unfreeze()
         try:
@@ -909,7 +907,7 @@ class Padding(Codec):
                     f"Defined pattern {binary.bin!s} ({len(binary.bin)} bits) "
                     f"couldn't be repeated within {size} bits",
                 )
-        self._write_io(io, context, codecs, binary)
+        self._write_io(io, context, codecs, binary, self.sizeof(io, context, codecs))
 
 
 class BitsInt(Codec):
@@ -940,7 +938,7 @@ class BitsInt(Codec):
             raise AttributeError(
                 f"Name {self.name!r} wasn't found in the container"
             ) from BuildError(io, context, codecs)
-        self._write_io(io, context, codecs, context[self.name])
+        self._write_io(io, context, codecs, context[self.name], self.sizeof(io, context, codecs))
 
 
 class Enum(BitsInt):
@@ -1226,7 +1224,7 @@ class RawBits(Codec):
         value = context[self.name]
         if isinstance(value, bytes):
             context.set(self.name, BitStream(value))
-        self._write_io(io, context, codecs, context[self.name])
+        self._write_io(io, context, codecs, context[self.name], self.sizeof(io, context, codecs))
 
 
 # ---------------- Computed ----------------
@@ -1353,14 +1351,14 @@ class Checksum(BitsInt):
 
     def _post_build(self, context: Container) -> BitStream:
         io = BitStream()
-        for name, value in context:
+        for name, value in context.items():
             if isinstance(value, Container):
                 self._post_build(value)
                 continue
             if name not in self.field_names:
                 continue
 
-            if isinstance(value, bitarray | BitStream):
+            if isinstance(value, BitStream):
                 io += value
             else:
                 io += BitStream(value)
@@ -1523,4 +1521,11 @@ class GreedyBits(Codec):
         value = context[self.name]
         if isinstance(value, bytes):
             value = BitStream(value)
-        self._write_io(io, context, codecs, value)
+
+        size = self.sizeof(BitStream(), context, codecs)
+        if size < 0:
+            # Due to the max size subtracting from the length of the IO,
+            # just send in the full length of the current IO stream.
+            self._write_io(io, context, codecs, value, len(value))
+            return
+        self._write_io(io, context, codecs, value, self.sizeof(value, context, codecs))

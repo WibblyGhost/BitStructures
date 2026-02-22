@@ -1,7 +1,6 @@
+from collections import OrderedDict
 from collections.abc import Callable, ItemsView, KeysView, Sequence
 from typing import TYPE_CHECKING, Any, Protocol, Self, runtime_checkable
-
-from bitarray import bitarray
 
 if TYPE_CHECKING:
     from bitstructures.base.bitstream import BitStream
@@ -12,6 +11,7 @@ if TYPE_CHECKING:
 
 type _Value = Any | EnumBase | BitStream | Container | Value
 type ValueType = _Value | Sequence[ValueType]
+type OrderedCollection[VT] = OrderedDict[str, VT]
 type DefaultType = _Pass | _Error
 type FunctType[T] = Callable[[Container], T]
 type ExpType = Callable[[int], int]
@@ -23,8 +23,6 @@ type WriteIoType = int | EnumBase | BitStream
 
 class SupportsSeek(Protocol):
     """Shadows the BitStream type classes."""
-
-    bitarray: bitarray
 
     def __len__(self) -> int: ...
     @property
@@ -54,7 +52,12 @@ class CodecProtocol(SupportsName, Protocol):
     def _parse_io(self, raw: "bytes | BitStream") -> "BitStream": ...
     def _read_io(self, io: "BitStream", context: "Container", codecs: "StackC") -> "BitStream": ...
     def _write_io(
-        self, io: "BitStream", context: "Container", codecs: "StackC", value: WriteIoType
+        self,
+        io: "BitStream",
+        context: "Container",
+        codecs: "StackC",
+        value: WriteIoType,
+        size: int,
     ) -> None: ...
     def sizeof(self, io: "BitStream", context: "Container", codecs: "StackC") -> int: ...
     def io_parse(self, io: "BitStream", context: "Container", codecs: "StackC") -> None: ...
@@ -80,8 +83,3 @@ class SupportsKeysAndGetItem[KT: str, VT: Any](Protocol):
     def keys(self) -> KeysView[KT]: ...
     def items(self) -> ItemsView[KT, VT]: ...
     def __getitem__(self, key: KT, /) -> VT: ...
-
-
-@runtime_checkable
-class SupportsBitArray(Protocol):
-    bitarray: bitarray
