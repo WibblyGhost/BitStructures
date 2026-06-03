@@ -12,7 +12,7 @@ See RFC768
 from math import ceil
 
 from bitstructures import (
-    BitsInt,
+    Bits,
     Const,
     Enum,
     ExprAdapter,
@@ -26,17 +26,17 @@ from bitstructures import (
 from bitstructures.base.codec import Codec, GreedyBits
 
 IPV4_HEADER = Struct(
-    "version" / Const(BitsInt(4), const=4),
+    "version" / Const(Bits(4), const=4),
     "header_length"
     / ExprAdapter(
         # Indicates the length of the header in 32-bit words (minimum is 5, which equals 20 bytes).
-        BitsInt(4),
+        Bits(4),
         encoder=lambda obj: obj * 4,
         decoder=lambda obj: ceil(obj / 4),
     ),
     "tos"
     / Struct(
-        "precedence" / BitsInt(3),
+        "precedence" / Bits(3),
         "minimize_delay" / Flag(),
         "high_throuput" / Flag(),
         "high_reliability" / Flag(),
@@ -44,11 +44,11 @@ IPV4_HEADER = Struct(
         Padding(1),
         embedded=False,
     ),
-    "total_length" / BitsInt(16),
-    "identification" / BitsInt(16),
+    "total_length" / Bits(16),
+    "identification" / Bits(16),
     "flags" / Struct(Padding(1), "dont_fragment" / Flag(), "more_fragments" / Flag()),
-    "fragment_offset" / BitsInt(13),
-    "ttl" / BitsInt(8),
+    "fragment_offset" / Bits(13),
+    "ttl" / Bits(8),
     "protocol"
     / Enum(
         8,
@@ -56,20 +56,20 @@ IPV4_HEADER = Struct(
         TCP=6,
         UDP=17,
     ),
-    "checksum" / BitsInt(16),
-    "source_ip" / IpAddress(BitsInt(32)),
-    "destination_ip" / IpAddress(BitsInt(32)),
-    "options" / Optional(BitsInt(lambda packet: packet.header_length - 20)),
+    "checksum" / Bits(16),
+    "source_ip" / IpAddress(Bits(32)),
+    "destination_ip" / IpAddress(Bits(32)),
+    "options" / Optional(Bits(lambda packet: packet.header_length - 20)),
 )
 
 TCP_HEADER = Struct(
-    "source_port" / BitsInt(16),
-    "destination_port" / BitsInt(16),
-    "seq" / BitsInt(32),
-    "ack" / BitsInt(32),
+    "source_port" / Bits(16),
+    "destination_port" / Bits(16),
+    "seq" / Bits(32),
+    "ack" / Bits(32),
     "length"
     / ExprAdapter(
-        BitsInt(4),
+        Bits(4),
         encoder=lambda obj: obj * 4,
         decoder=lambda obj: ceil(obj / 4),
     ),
@@ -87,19 +87,19 @@ TCP_HEADER = Struct(
         "fin" / Flag(),
         embedded=False,
     ),
-    "window" / BitsInt(16),
-    "checksum" / BitsInt(16),
-    "urgent" / BitsInt(16),
-    "options" / Optional(BitsInt(lambda packet: packet.length - 20)),
+    "window" / Bits(16),
+    "checksum" / Bits(16),
+    "urgent" / Bits(16),
+    "options" / Optional(Bits(lambda packet: packet.length - 20)),
 )
 
 UDP_HEADER = Struct(
-    "source_port" / BitsInt(16),
-    "destination_port" / BitsInt(16),
+    "source_port" / Bits(16),
+    "destination_port" / Bits(16),
     # Indicates the total length of the UDP header plus the payload.
     # The minimum value for this field is 8 (the header size), as there is always a header present.
-    "length" / BitsInt(16),
-    "checksum" / BitsInt(16),
+    "length" / Bits(16),
+    "checksum" / Bits(16),
 )
 
 

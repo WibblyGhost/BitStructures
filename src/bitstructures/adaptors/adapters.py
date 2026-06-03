@@ -2,7 +2,7 @@ from ipaddress import IPv4Address
 from typing import Any, override
 
 from bitstructures.base.bitstream import BitStream
-from bitstructures.base.codec import BitsInt, Codec, StackC
+from bitstructures.base.codec import Bits, Codec, StackC
 from bitstructures.base.objects import Container
 from bitstructures.exceptions import CodecError, DecodeError, EncodeError, add_codec_to_traceback
 from bitstructures.typing import AdapterProtocol, ExpType
@@ -63,7 +63,7 @@ class IpAddress(Adapter, AdapterProtocol):
     """
     Converts an integer into an IP Address and vice versa, this is usually a 32 bit field.
 
-    >>> "source_ip" / IpAddress(BitsInt(32))
+    >>> "source_ip" / IpAddress(Bits(32))
     """
 
     @override
@@ -79,12 +79,12 @@ class Scaler(Adapter, AdapterProtocol):
     """
     Simple adapter which multiplies the encoded/decoded value by an integer factor.
 
-    >>> "timer" / Scaler(BitsInt(16), factor=0.1)
+    >>> "timer" / Scaler(Bits(16), factor=0.1)
     """
 
     @override
     def __init__(self, subcodec: Codec, /, factor: float) -> None:
-        if not isinstance(subcodec, BitsInt):
+        if not isinstance(subcodec, Bits):
             raise TypeError(
                 f"{self.__class__.__name__} adapter only support integer {Codec.__name__}'s, "
                 f"got {type(subcodec)}"
@@ -106,7 +106,7 @@ class ExprAdapter(Adapter, AdapterProtocol):
     Simple adapter that takes lambda's as the encoders and decoders.
 
     >>> "header_length" / ExprAdapter(
-        BitsInt(4),
+        Bits(4),
         encoder=lambda value: ceil(value / 4),
         decoder=lambda value: value * 4,
     )

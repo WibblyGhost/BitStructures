@@ -5,11 +5,11 @@ from typing import TYPE_CHECKING, Any, Protocol, Self, runtime_checkable
 if TYPE_CHECKING:
     from bitstructures.base.bitstream import BitStream
     from bitstructures.base.codec import Codec, StackC, _Error, _Pass
-    from bitstructures.base.objects import Container, EnumBase, Value
+    from bitstructures.base.objects import Container, EnumBase
 
 # ---- TYPING ----
 
-type _Value = Any | EnumBase | BitStream | Container | Value
+type _Value = Any | EnumBase | BitStream | Container
 type ValueType = _Value | Sequence[ValueType]
 type OrderedCollection[VT] = OrderedDict[str, VT]
 type DefaultType = _Pass | _Error

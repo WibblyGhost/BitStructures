@@ -1,13 +1,10 @@
-from collections import OrderedDict
-from collections.abc import Generator, Iterator
-from dataclasses import dataclass, field
+from collections.abc import Generator
 from enum import Enum as Enum_
-from typing import Any, Self, SupportsIndex, override
+from typing import Any, SupportsIndex, override
 
-from bitstructures.base.bitstream import BitStream
 from bitstructures.constants import PP_DETENT, PP_INDENT, PP_TAB
-from bitstructures.exceptions import FrozenError, SizeError
-from bitstructures.typing import OrderedCollection, SupportsKeysAndGetItem, SupportsName, ValueType
+from bitstructures.exceptions import FrozenError
+from bitstructures.typing import SupportsName
 
 
 class FrozenSlots:
@@ -40,72 +37,7 @@ class FrozenSlots:
 # ---------------- Containers ----------------
 
 
-@dataclass(slots=True, frozen=True)
-class Value:
-    """
-    Dataclass which stores all the information about the current encoded/decoded value,
-    this will get passed around all the parse functions and contains name, size and values.
-    """
-
-    name: str
-    v_item: ValueType
-    size: int = field(default=-1, compare=False, hash=False)
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.name, str):
-            raise TypeError("Value's name is not of type str")
-        if not isinstance(self.size, int):
-            raise TypeError("Value's size is not of type int")
-        if self.size < 0:
-            raise SizeError("Value's size cannot be negative")
-
-    @property
-    def bitstream(self) -> BitStream:
-        if isinstance(self.v_item, Container):
-            bitstream = BitStream()
-            for value in self.v_item.values():
-                bitstream += value.bitstream
-            return bitstream
-
-        if not isinstance(self.v_item, BitStream):
-            raise TypeError(
-                f"Expected item to be of type BitStream but got "
-                f"{type(self.v_item)}: {self.v_item!s}"
-            )
-        return self.v_item
-
-    def __str__(self) -> str:
-        return f"<{self.name!r}: {self.v_item!s}>"
-
-    def __repr__(self) -> str:
-        return f"<{self.name!r}: {self.v_item!s}, size={self.sizeof()}>"
-
-    def pprint(self) -> str:
-        return f"{self.name!r:<30} | size={self.sizeof():<2} | {self.v_item!s}"
-
-    def __hash__(self) -> int:
-        return hash(self.v_item)
-
-    def __eq__(self, value: object) -> bool:
-        return self.v_item == value
-
-    def __float__(self) -> float:
-        if not isinstance(self.v_item, str | float | int):
-            raise TypeError(f"Cannot perform a float conversion on a {type(self.v_item)}")
-        return float(self.v_item)
-
-    def __int__(self) -> int:
-        if not isinstance(self.v_item, str | int):
-            raise TypeError(f"Cannot perform a int conversion on a {type(self.v_item)}")
-        return int(self.v_item)
-
-    def sizeof(self) -> int:
-        if self.size < 0:
-            raise SizeError(f"Value {self.name} doesn't have a size")
-        return self.size
-
-
-class Container[VT: Any = Any](OrderedDict[str, VT]):
+class Container[VT: Any = Any](dict[str, VT]):  # noqa: PLW1641
     """
     Wrapper for a dictionary-like object, we use this to add extra functionality to
     the container indexing, and adding frozen attributes to the setters.
@@ -114,81 +46,33 @@ class Container[VT: Any = Any](OrderedDict[str, VT]):
     direct access `container.id`.
     """
 
-    def __init__(
-        self, dictionary: SupportsKeysAndGetItem[str, VT] | None = None, **kwargs: VT
-    ) -> None:
-        self.__frozen: bool = False
+    __slots__ = ("__parent",)  # store only the extra attribute, no __dict__
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__()
+        dict.update(self, *args, **kwargs)
         self.__parent: Container[VT] | None = None
-        if dictionary:
-            super().__init__(dictionary, **kwargs)
-        else:
-            super().__init__(**kwargs)
 
-    def _check_frozen(self) -> None:
-        if self.__frozen:
-            raise FrozenError("Class is now frozen, cannot change attributes")
+    def copy(self) -> "Container[VT]":
+        return Container(self.items())
 
-    def __iter__(self) -> Iterator[str]:
-        return super().__iter__()
-
-    def __setitem__(self, key: str, value: VT, /) -> None:
-        self._check_frozen()
-        super().__setitem__(key, value)
-
-    def __delitem__(self, key: str, /) -> None:
-        self._check_frozen()
-        super().__delitem__(key)
-
-    def clear(self) -> None:
-        self._check_frozen()
-        super().clear()
-
-    def freeze(self) -> None:
-        self.__frozen = True
-
-    def unfreeze(self) -> None:
-        self.__frozen = False
-
-    def copy(self) -> Self:
-        container = super().copy()
-        if self.__frozen:
-            container.freeze()
-        return container
-
-    def set(self, key: str, value: VT) -> None:
-        self[key] = value
-
-    def _rec_str(self, value: VT | OrderedCollection[VT]) -> Any:
-        """Formats any nested Container's."""
-        # RECURSIVE
-        if isinstance(value, BitStream):
-            if len(value) % 8 == 0:
-                return bytes(value)
-            return f"0b{value.bin}"
-        if isinstance(value, list):
-            return [self._rec_str(v) for v in value]
-        if isinstance(value, Container | dict):
-            return {
-                key: self._rec_str(value)
-                for key, value in value.items()
-                if not key.startswith("__")
-            }
-        return value
-
-    def __str__(self) -> str:
-        return f"{self._rec_str(self)!s}"
+    def __eq__(self, other: object, /) -> bool:
+        if self is other:
+            return True
+        if not isinstance(other, dict):
+            return False
+        return self.items() == other.items()
 
     def __repr__(self) -> str:
         items = {
             k: v
             for k, v in self.items()
-            if not (k.startswith("__") or k.startswith(self.__class__.__name__))
+            if not (k.startswith("__") or k.startswith(f"_{self.__class__.__name__}"))
         }
         return f"{self.__class__.__name__}({items!r})"
 
-    # CUSTOM GETATTR
-
     def set_parent(self, parent: "Container") -> None:
+        assert isinstance(parent, Container)
         self.__parent = parent
 
     @property
@@ -209,11 +93,17 @@ class Container[VT: Any = Any](OrderedDict[str, VT]):
         Custom getattr method that also searches the dictionary for the attribute.
         Gets triggered upon failure to get attribute in the Self.
         """
-        if attr in self.__dict__:
-            return object.__getattribute__(self, attr)
         if attr in self:
             return self[attr]
-        raise AttributeError(attr)
+        try:
+            return object.__getattribute__(self, attr)
+        except AttributeError as err:
+            err.add_note(f"Attempted to access {attr} from the object {self!r}")
+            err.add_note(f"Parent={self.__parent}")
+            raise
+
+    def set(self, name: str, value: VT) -> None:
+        self[name] = value
 
     def pprint(self, *, padding: str = "\t{t}{v:-^38}{t}\n", depth: int = 1) -> str:
         # RECURSIVE

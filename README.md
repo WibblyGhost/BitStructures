@@ -39,7 +39,7 @@ TODO:
 
 ### BitStream
 
-`BitStream` is a custom IO buffer class which works on a `str` base.
+`BitStream` is a custom IO buffer class which works on a `StringIO` base.
 Taking in a bytes/bits buffer type and creating a buffer to read and write upon.
 This class contains many methods to make it easier to convert between bits and integers or bytes.
 Writing and reading to/from the stream modifies the underlying buffer.
@@ -47,7 +47,7 @@ Writing and reading to/from the stream modifies the underlying buffer.
 ```python
 class BitStream:
     """Custom IO class which converts a bytestream into a bitstream with read and write methods."""
-    stream: str
+    stream: StringIO
     @property
     def bin(self) -> str: ...
     def __init__(self, buffer: bytes | str = b"", /) -> None:
@@ -61,27 +61,10 @@ class BitStream:
     def bit_length(self) -> int: ...
 ```
 
-### Stacks & Values
+### Containers & Stacks
 
-The encoders/decoders handle *key, value* pairs by pushing them onto a stack, rather than using a dictionary, which helps with error detection and ordering.
-Each *key, value* pair is assigned a `Value(name, item, size)` class which makes it easy at computation time to determine the size of objects and where it went wrong when encoding/decoding patterns.
-
-```python
-@dataclass(slots=True, frozen=True)
-class Value:
-    """
-    Dataclass which stores all the information about the current encoded/decoded value,
-    this will get passed around all the parse functions and contains name, size and values.
-    """
-    name: str
-    v_item: ValueType
-    size: int = field(default=-1, compare=False, hash=False)
-    def pprint(self) -> str: ...
-```
-
-Containers use an `OrderedDict` underneath, whilst also including some additional attribute access functionality.
-Meaning that you can access the items of the Container with direct `container.item` analogy, upon failure to find an attribute it will search the underlying data store for that attribute too.
-This class can be set as frozen to disallow any modifications and deletions to the object, and has a nice **pretty print** function built in.
+The encoders/decoders handle `Codec`'s by pushing them ontop of a stack, which helps with indexing and error detection.
+`Containers` are also used as a special dictionary holding *key, value*, they pass on their members to the encoders/decoders. They also contain a *parent* property under the attribute `Container._` which helps with indexing the parent container within the encoding/decoding process. `Container`'s also include special attribute access functionality, meaning that you can access the items of the Container with direct `container.item` analogy, upon failure to find an attribute it will search the underlying data store for that attribute too. The Container has a nice **pretty print** function built in.
 
 ```python
 
@@ -99,7 +82,7 @@ class Container[VT: Any = Any]:
 ```
 
 Stacks work off a base layer of the **list** to create stack functionality, which includes pushing items onto a stack and popping items off a stack.
-You can assign the type of the **Stack** using the `Stack[Value]` terminology.
+You can assign the type of the **Stack** using the `Stack[str]` terminology.
 
 All stacks have definitions for pushing, setting, clearing, popping and freezing the stack.
 
@@ -132,6 +115,9 @@ class EnumBase(Enum_):
 
     name: str
     value: int
+
+> str(enum)
+> <STANDARD: 0>
 ```
 
 ## Codec
@@ -245,6 +231,12 @@ NotImplementedCodec = Error
 `Struct`'s are the main building block and wrapper of codecs, these are what we use to call the `parse()` and `build()` methods and contain an array of `Codec`'s.
 These can be nested inside each other, and may be either embedded into the current structure or wrapped into a seperate container upon parsing and building.
 
+
+Most `Struct`'s contain an `embedded` attribute which is enabled by default when it has no name assigned, but can also be manually assigned. This make all the defined `Codec`'s inside the `Struct` embed to the parent `Codec`.
+
+> [!NOTE]
+> `embedded` toggling is still an experimental feature when toggled manually, and can cause unpredictable indexing of other `Codec`'s particularly the `Pointer` for example.
+
 ```python
 class Struct(Codec, StructProtocol):
     """
@@ -252,8 +244,8 @@ class Struct(Codec, StructProtocol):
     handle recursive Codecs when parsing and building.
 
     >>> codec = Struct(
-        "int1" / BitInts(4),
-        "int2" / BitInts(4),
+        "int1" / Bits(4),
+        "int2" / Bits(4),
     )
     """
 
@@ -367,7 +359,7 @@ class Optional(Codec):
     Will attempt to parse/build this Codec, but upon failure, will ignore the
     errors and parse an empty value.
 
-    >>> "options" / Optional(BitsInt(8))
+    >>> "options" / Optional(Bits(8))
     """
 ```
 
@@ -390,17 +382,17 @@ class Padding(Codec):
     def __init__(self, size: int, /, *, pattern: int = 0) -> None: ...
 ```
 
-#### BitsInt
+#### Bits
 
 Core Codec which converts a bitstream into an unsigned integer.
 
 ```python
-class BitsInt(Codec):
+class Bits(Codec):
     """
     Defines an integer representation from the BitStream,
     will return an integer when parsing and takes any int on building.
 
-    >>> "int1" / BitInts(8)
+    >>> "int1" / Bits(8)
     """
 
     def __init__(self, size: int | FunctType[int]) -> None: ...
@@ -408,14 +400,14 @@ class BitsInt(Codec):
 
 #### Enum
 
-The Enum Codec is a BitsInt type which contains a string to integer mapping for its parsed/built values.
+The Enum Codec is a Bits type which contains a string to integer mapping for its parsed/built values.
 By default, if a value cannot be mapped, it will raise an exception, but this can be changed to ignore missing
 mappings via the `default=Pass` keyword argument.
 
 ```python
-class Enum(BitsInt):
+class Enum(Bits):
     """
-    Defines a BitsInt Codec which will encode into a Enum value, by default
+    Defines a Bits Codec which will encode into a Enum value, by default
     the parsing/building will fail if the value isn't in the defined enum's,
     but this can be modified to default to the integer via the `Pass`.
 
@@ -466,7 +458,7 @@ class Mapping(Enum):
 Used to represent a boolean object or a flag, it is exactly one bit long.
 
 ```python
-class Flag(BitsInt):
+class Flag(Bits):
     """
     Defines a boolean or a 'flag' which represents one bit.
 
@@ -487,10 +479,9 @@ class Const(Codec):
     Asserts that the parsed/built value always equals the constant,
     and adds the value to the build if not presented.
 
-    >>> "version" / Const(BitsInt(24), const=0x2)
+    >>> "version" / Const(Bits(24), const=0x2)
     """
 
-    constant: int | str
     def __init__(self, subcodec: Codec, /, const: int | str) -> None: ...
 ```
 
@@ -504,7 +495,7 @@ class Default(Codec):
     If a value wasn't provided in the build container, this Codec
     will add the value to the container set to it's default value.
 
-    >>> "version" / Default(BitsInt(24), default=0x2)
+    >>> "version" / Default(Bits(24), default=0x2)
     """
 
     def __init__(self, subcodec: Codec, /, default: Any) -> None: ...
@@ -524,10 +515,10 @@ class Array(Codec):
     defined counts, or via a lambda expression.
 
     *Count*
-    >>>  "signs" / Array(BitsInt(4), count=8)
+    >>>  "signs" / Array(Bits(4), count=8)
 
     *Functional*
-    >>>  "signs" / Array(BitsInt(4), count=lambda packet: packet.array_count)
+    >>>  "signs" / Array(Bits(4), count=lambda packet: packet.array_count)
     """
 
     def __init__(self, subcodec: Codec, /, count: int | FunctType[int]) -> None: ...
@@ -571,7 +562,7 @@ class Computed[T: ValueType](Codec):
 #### Bitshift
 
 Useful for splitting and combining two different bit fields into one bit field,
-meaning you can have codecs between the two integer parts then combine them into one field.
+meaning you can have codecs between the two integer parts then combine them into one field. **Bitshift fields build into null bits**, this means you must build the `_p1` & `_p2` fields manually before the parse command.
 
 
 ```python
@@ -582,15 +573,15 @@ class Bitshift[T: Any = int](Codec):
     applying a bitshift to combine the two packets.
 
     >>> Struct(
-        "id_p1" / BitsInt(2),
-        "random" / BitsInt(6),
-        "id_p2" / BitsInt(8),
-        "id" / Bitshift[int]("id", bitshift),
+        "id_p1" / Bits(2),
+        "random" / Bits(6),
+        "id_p2" / Bits(8),
+        "id" / Bitshift[int]("id", bitshift, msb=False),
     )
     """
 
     def __init__(
-        self, field_name: str, funct: Callable[..., T], msb: bool = True, *args: Any, **kwargs: Any
+        self, field_name: str, funct: Callable[..., T], msb: bool, *args: Any, **kwargs: Any
     ) -> None: ...
 ```
 
@@ -600,7 +591,7 @@ Checksum is a very special Codec type which will perform checksum calculations o
 The fields to perform the checksum calculations must be listed and present before the checksum Codec.
 
 ```python
-class Checksum(BitsInt):
+class Checksum(Bits):
     """
     Used to add a calculated checksum value upon building a Codec.
 
@@ -654,13 +645,13 @@ class GreedyArray(Array):
     more to consume and add them to the stream.
 
     *Count until EOS*
-    >>>  "signs" / GreedyArray(BitsInt(4))
+    >>>  "signs" / GreedyArray(Bits(4))
 
     *Consume until count*
-    >>>  "signs" / Array(BitsInt(4), max_count=4)
+    >>>  "signs" / Array(Bits(4), max_count=4)
 
     *Functionally consume until count*
-    >>>  "signs" / Array(BitsInt(4), max_count=lambda packet: packet.array_count)
+    >>>  "signs" / Array(Bits(4), max_count=lambda packet: packet.array_count)
     """
 
     def __init__(self, subcodec: Codec, /, max_count: int | FunctType[int] = -1) -> None: ...
@@ -709,10 +700,10 @@ class GreedyBits(Codec):
 
 #### Blacklisted
 
-Simple wrapper for the BitsInt Codec which will raise an exception if the parsed value is in the blacklisted range.
+Simple wrapper for the Bits Codec which will raise an exception if the parsed value is in the blacklisted range.
 
 ```python
-class Blacklisted(BitsInt):
+class Blacklisted(Bits):
     """
     Prevents parsing/building a certain range of values, failing to do so
     will raise a BlacklistedError.
@@ -725,10 +716,10 @@ class Blacklisted(BitsInt):
 
 #### Whitelisted
 
-Simple wrapper for the BitsInt Codec which will raise an exception if the parsed value is not in the whitelisted range.
+Simple wrapper for the Bits Codec which will raise an exception if the parsed value is not in the whitelisted range.
 
 ```python
-class Whitelisted(BitsInt):
+class Whitelisted(Bits):
     """
     Only allows parsing/building a certain range of values, failing to do so
     will raise a WhitelistedError.
@@ -773,7 +764,7 @@ class IpAddress(Adapter):
     """
     Converts an integer into an IP Address and vice versa, this is usually a 32 bit field.
 
-    >>> "source_ip" / IpAddress(BitsInt(32))
+    >>> "source_ip" / IpAddress(Bits(32))
     """
 ```
 
@@ -786,7 +777,7 @@ class Scaler(Adapter):
     """
     Simple adapter which multiplies the encoded/decoded value by an integer factor.
 
-    >>> "timer" / Scaler(BitsInt(16), factor=0.1)
+    >>> "timer" / Scaler(Bits(16), factor=0.1)
     """
 
     def __init__(self, subcodec: Codec, /, factor: float) -> None: ...
@@ -802,7 +793,7 @@ class ExprAdapter(Adapter):
     Simple adapter that takes lambda's as the encoders and decoders.
 
     >>> "header_length" / ExprAdapter(
-        BitsInt(4),
+        Bits(4),
         encoder=lambda value: ceil(value / 4),
         decoder=lambda value: value * 4,
     )
@@ -817,17 +808,17 @@ class ExprAdapter(Adapter):
 ```python
 
 IPV4_HEADER = Struct(
-    "version" / Const(BitsInt(4), const=4),
+    "version" / Const(Bits(4), const=4),
     "header_length"
     / ExprAdapter(
         # Indicates the length of the header in 32-bit words (minimum is 5, which equals 20 bytes).
-        BitsInt(4),
+        Bits(4),
         encoder=lambda obj: obj * 4,
         decoder=lambda obj: ceil(obj / 4),
     ),
     "tos"
     / Struct(
-        "precedence" / BitsInt(3),
+        "precedence" / Bits(3),
         "minimize_delay" / Flag(),
         "high_throuput" / Flag(),
         "high_reliability" / Flag(),
@@ -835,11 +826,11 @@ IPV4_HEADER = Struct(
         Padding(1),
         embedded=False,
     ),
-    "total_length" / BitsInt(16),
-    "identification" / BitsInt(16),
+    "total_length" / Bits(16),
+    "identification" / Bits(16),
     "flags" / Struct(Padding(1), "dont_fragment" / Flag(), "more_fragments" / Flag()),
-    "fragment_offset" / BitsInt(13),
-    "ttl" / BitsInt(8),
+    "fragment_offset" / Bits(13),
+    "ttl" / Bits(8),
     "protocol"
     / Enum(
         8,
@@ -847,20 +838,20 @@ IPV4_HEADER = Struct(
         TCP=6,
         UDP=17,
     ),
-    "checksum" / BitsInt(16),
-    "source_ip" / IpAddress(BitsInt(32)),
-    "destination_ip" / IpAddress(BitsInt(32)),
-    "options" / Optional(BitsInt(lambda packet: packet.header_length - 20)),
+    "checksum" / Bits(16),
+    "source_ip" / IpAddress(Bits(32)),
+    "destination_ip" / IpAddress(Bits(32)),
+    "options" / Optional(Bits(lambda packet: packet.header_length - 20)),
 )
 
 TCP_HEADER = Struct(
-    "source_port" / BitsInt(16),
-    "destination_port" / BitsInt(16),
-    "seq" / BitsInt(32),
-    "ack" / BitsInt(32),
+    "source_port" / Bits(16),
+    "destination_port" / Bits(16),
+    "seq" / Bits(32),
+    "ack" / Bits(32),
     "length"
     / ExprAdapter(
-        BitsInt(4),
+        Bits(4),
         encoder=lambda obj: obj * 4,
         decoder=lambda obj: ceil(obj / 4),
     ),
@@ -878,19 +869,19 @@ TCP_HEADER = Struct(
         "fin" / Flag(),
         embedded=False,
     ),
-    "window" / BitsInt(16),
-    "checksum" / BitsInt(16),
-    "urgent" / BitsInt(16),
-    "options" / Optional(BitsInt(lambda packet: packet.length - 20)),
+    "window" / Bits(16),
+    "checksum" / Bits(16),
+    "urgent" / Bits(16),
+    "options" / Optional(Bits(lambda packet: packet.length - 20)),
 )
 
 UDP_HEADER = Struct(
-    "source_port" / BitsInt(16),
-    "destination_port" / BitsInt(16),
+    "source_port" / Bits(16),
+    "destination_port" / Bits(16),
     # Indicates the total length of the UDP header plus the payload.
     # The minimum value for this field is 8 (the header size), as there is always a header present.
-    "length" / BitsInt(16),
-    "checksum" / BitsInt(16),
+    "length" / Bits(16),
+    "checksum" / Bits(16),
 )
 
 

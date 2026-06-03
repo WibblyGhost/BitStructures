@@ -4,7 +4,7 @@ from copy import deepcopy
 from typing import Any, ClassVar, NoReturn, Protocol, Self, override
 
 from bitstructures.base.bitstream import BitStream
-from bitstructures.base.objects import Container, EnumBase, Stack, Value
+from bitstructures.base.objects import Container, EnumBase, Stack
 from bitstructures.constants import PP_DETENT, PP_INDENT, PP_TAB
 from bitstructures.exceptions import (
     BitsIoError,
@@ -106,7 +106,7 @@ class Codec(CodecProtocol):
         self.name:          Name of this codec, can use "name" / Codec to name this codec
         self.size:         Size in bits of this codec
         """  # noqa: D400, D415
-        self._subcodec: Codec | None = subcodec
+        self._subcodec: Codec | None = deepcopy(subcodec)
         self._initialized: bool = False
         self._name: str = ""
         self._size: int | FunctType[int] = subcodec._size if subcodec else -1  # noqa: SLF001
@@ -180,6 +180,12 @@ class Codec(CodecProtocol):
         raise TypeError(f"Unhandled type {type(other)} for division")
 
     def rename(self, name: str) -> None:
+        """
+        Internally renames a Codec's description and initializes the Codec.
+        This doesn't deepcopy the Codec as that is done in __rdiv__.
+
+        NOTE: Only used internally, please use __rdiv__ for any real renaming of Codec's
+        """
         self._name = name
         self._initialized = True
         if hasattr(self, "_subcodec") and self._subcodec:
@@ -187,6 +193,7 @@ class Codec(CodecProtocol):
             self._subcodec.rename(name)
 
     def sizeof(self, io: BitStream, context: Container, codecs: StackC) -> int:
+        """Returns the size of the current Codec given a build container."""
         self._check_initialized()
         size: int = self._size(context) if callable(self._size) else self._size
         if size < 0:  # If size is negative
@@ -502,8 +509,9 @@ class Struct(Codec, StructProtocol):
             nested = context
             codec_stack = codecs
         else:
-            nested = context[self.name]
-            nested.set_parent(context)
+            ctx = context.copy()
+            nested = ctx.pop(self.name)
+            nested.set_parent(ctx)
             codec_stack = StackC()
             codec_stack.name = self.name
 
@@ -529,7 +537,6 @@ class Struct(Codec, StructProtocol):
         io = BitStream()
         # Copy container, and unfreeze this one (needed for IO setting operations)
         context = container.copy()
-        context.unfreeze()
         try:
             self.io_build(io, context, codecs)
             if len(io) % 8 != 0:
@@ -546,8 +553,6 @@ class Struct(Codec, StructProtocol):
             raise
         except Exception as err:
             raise BuildError(io, context, codecs, repr(err)) from err
-        finally:
-            container.unfreeze()
 
     def sizeof(self, io: BitStream, context: Container, codecs: StackC) -> int:
         if isinstance(self.size, int) and self.size > 0:
@@ -622,7 +627,10 @@ class Pointer(Struct):
         add_codec_to_traceback(self, codecs)
 
         for codec in (*self._end_codec, *self._start_codec):
-            codec.io_build(io, context, codecs)
+            ctx = context.copy()
+            nested: Container = ctx.pop(self.name)
+            nested.set_parent(ctx)
+            codec.io_build(io, nested, codecs)
 
 
 # ---------------- Conditional Structures ----------------
@@ -650,7 +658,7 @@ class Conditional(Codec):
     @override
     def __init__(
         self,
-        condition: FunctType[int],
+        condition: FunctType[bool],
         then_: Codec,
         else_: Codec = Pass,
         *,
@@ -664,6 +672,8 @@ class Conditional(Codec):
             if isinstance(else_, Struct):
                 else_.embedded = embedded
         self.embedded = embedded
+        # Make sure to use the __rdiv__ here not rename to
+        # return a deepcopy of the Codec
         self._then = self.name / then_
         self._else = self.name / else_
         # NOTE: This is the one of the few class that is allowed a size of 0
@@ -698,7 +708,15 @@ class Conditional(Codec):
     def io_parse(self, io: BitStream, context: Container, codecs: StackC) -> None:
         add_codec_to_traceback(self, codecs)
 
-        if self.condition(context):
+        condition = self.condition(context)
+        if not isinstance(condition, bool):
+            raise ParseError(
+                io,
+                context,
+                codecs,
+                f"Condition returned a non-bool value {condition!r}",
+            )
+        if condition:
             self._then.io_parse(io, context, codecs)
         elif self._else is not Pass:
             self._else.io_parse(io, context, codecs)
@@ -707,7 +725,15 @@ class Conditional(Codec):
     def io_build(self, io: BitStream, context: Container, codecs: StackC) -> None:
         add_codec_to_traceback(self, codecs)
 
-        if self.condition(context):
+        condition = self.condition(context)
+        if not isinstance(condition, bool):
+            raise ParseError(
+                io,
+                context,
+                codecs,
+                f"Condition returned a non-bool value {condition!r}",
+            )
+        if condition:
             self._then.io_build(io, context, codecs)
         else:
             self._else.io_build(io, context, codecs)
@@ -819,7 +845,7 @@ class Optional(Codec):
     Will attempt to parse/build this Codec, but upon failure, will ignore the
     errors and parse an empty value.
 
-    >>> "options" / Optional(BitsInt(8))
+    >>> "options" / Optional(Bits(8))
     """
 
     @override
@@ -910,7 +936,7 @@ class Padding(Codec):
         self._write_io(io, context, codecs, binary, self.sizeof(io, context, codecs))
 
 
-class BitsInt(Codec):
+class Bits(Codec):
     """
     Defines a integer representation from the BitStream,
     will return an integer when parsing and takes any int on building.
@@ -935,15 +961,18 @@ class BitsInt(Codec):
         add_codec_to_traceback(self, codecs)
 
         if self.name not in context:
-            raise AttributeError(
-                f"Name {self.name!r} wasn't found in the container"
-            ) from BuildError(io, context, codecs)
+            attr_error = AttributeError(
+                f"Attempted to access {self.name!r} from the object {context!r}"
+            )
+            attr_error.add_note(f"Parent={context._ if hasattr(context, '_') else None}")
+            raise attr_error from BuildError(io, context, codecs)
+
         self._write_io(io, context, codecs, context[self.name], self.sizeof(io, context, codecs))
 
 
-class Enum(BitsInt):
+class Enum(Bits):
     """
-    Defines a BitsInt Codec which will encode into a Enum value, by default
+    Defines a Bits Codec which will encode into a Enum value, by default
     the parsing/building will fail if the value isn't in the defined enum's,
     but this can be modified to default to the integer via the `Pass`.
 
@@ -966,7 +995,9 @@ class Enum(BitsInt):
     ) -> None:
         super().__init__(size)
         self._enum: EnumBase = EnumBase("enum", kwargs)  # type: ignore[call-arg]
-        self._default = default
+        # Make sure to use the __rdiv__ here not rename to
+        # return a deepcopy of the Codec
+        self._default = self.name / default
 
     @property
     def enum(self) -> EnumBase:
@@ -1042,7 +1073,7 @@ class Mapping(Enum):
         super().__init__(size, default=default, **map)
 
 
-class Flag(BitsInt):
+class Flag(Bits):
     """
     Defines a boolean or a 'flag' which represents one bit.
 
@@ -1066,7 +1097,7 @@ class Const(Codec):
     Asserts that the parsed/built value always equals the constant,
     and adds the value to the build if not presented.
 
-    >>> "version" / Const(BitsInt(24), const=0x2)
+    >>> "version" / Const(Bits(24), const=0x2)
     """
 
     @override
@@ -1108,7 +1139,7 @@ class Default(Codec):
     If a value wasn't provided in the build container, this Codec
     will add the value to the container set to it's default value.
 
-    >>> "version" / Default(BitsInt(24), default=0x2)
+    >>> "version" / Default(Bits(24), default=0x2)
     """
 
     @override
@@ -1137,10 +1168,10 @@ class Array(Codec):
     defined counts, or via a lambda expression.
 
     *Count*
-    >>>  "signs" / Array(BitsInt(4), count=8)
+    >>>  "signs" / Array(Bits(4), count=8)
 
     *Functional*
-    >>>  "signs" / Array(BitsInt(4), count=lambda packet: packet.array_count)
+    >>>  "signs" / Array(Bits(4), count=lambda packet: packet.array_count)
     """
 
     @override
@@ -1189,8 +1220,8 @@ class Array(Codec):
             )
         for value in values:
             nested = Container()
-            nested[self.name] = value
             nested.set_parent(context)
+            nested[self.name] = value
             self.subcodec.io_build(io, nested, codecs)
 
 
@@ -1218,9 +1249,11 @@ class RawBits(Codec):
         add_codec_to_traceback(self, codecs)
 
         if self.name not in context:
-            raise AttributeError(
-                f"Name {self.name!r} wasn't found in the container",
-            ) from BuildError(io, context, codecs)
+            attr_error = AttributeError(
+                f"Attempted to access {self.name!r} from the object {context!r}"
+            )
+            attr_error.add_note(f"Parent={context._ if hasattr(context, '_') else None}")
+            raise attr_error from BuildError(io, context, codecs)
         value = context[self.name]
         if isinstance(value, bytes):
             context.set(self.name, BitStream(value))
@@ -1268,9 +1301,9 @@ class Bitshift[T: Any = int](Codec):
     applying a bitshift to combine the two packets.
 
     >>> Struct(
-        "id_p1" / BitsInt(2),
-        "random" / BitsInt(6),
-        "id_p2" / BitsInt(8),
+        "id_p1" / Bits(2),
+        "random" / Bits(6),
+        "id_p2" / Bits(8),
         "id" / Bitshift[int]("id", bitshift),
     )
     """
@@ -1280,8 +1313,8 @@ class Bitshift[T: Any = int](Codec):
         self,
         field_name: str,
         funct: Callable[..., T],
-        msb: bool = True,
         *args: Any,
+        msb: bool,
         **kwargs: Any,
     ) -> None:
         super().__init__()
@@ -1312,7 +1345,7 @@ class Bitshift[T: Any = int](Codec):
         add_codec_to_traceback(self, codecs)
 
 
-class Checksum(BitsInt):
+class Checksum(Bits):
     """
     Used to add a calculated checksum value upon building a Codec.
 
@@ -1386,13 +1419,13 @@ class GreedyArray(Array):
     more to consume and add them to the stream.
 
     *Count until EOS*
-    >>>  "signs" / GreedyArray(BitsInt(4))
+    >>>  "signs" / GreedyArray(Bits(4))
 
     *Consume until count*
-    >>>  "signs" / Array(BitsInt(4), max_count=4)
+    >>>  "signs" / Array(Bits(4), max_count=4)
 
     *Functionally consume until count*
-    >>>  "signs" / Array(BitsInt(4), max_count=lambda packet: packet.array_count)
+    >>>  "signs" / Array(Bits(4), max_count=lambda packet: packet.array_count)
     """
 
     @override
@@ -1412,7 +1445,7 @@ class GreedyArray(Array):
     def io_parse(self, io: BitStream, context: Container, codecs: StackC) -> None:
         add_codec_to_traceback(self, codecs)
 
-        values: list[Value] = []
+        values: list[ValueType] = []
         max_count = self._get_count(context)
         i = 0
         if max_count > 0:
@@ -1422,7 +1455,7 @@ class GreedyArray(Array):
                 nested = Container()
                 nested.set_parent(context)
                 self.subcodec.io_parse(io, nested, codecs)
-                values.append(nested["__io"])
+                values.append(nested[self.name])
                 i += 1
                 if max_count > 0 and i >= max_count:
                     break
@@ -1515,9 +1548,12 @@ class GreedyBits(Codec):
         add_codec_to_traceback(self, codecs)
 
         if self.name not in context:
-            raise AttributeError(
-                f"Name {self.name!r} wasn't found in the container",
-            ) from BuildError(io, context, codecs)
+            attr_error = AttributeError(
+                f"Attempted to access {self.name!r} from the object {context!r}"
+            )
+            attr_error.add_note(f"Parent={context._ if hasattr(context, '_') else None}")
+            raise attr_error from BuildError(io, context, codecs)
+
         value = context[self.name]
         if isinstance(value, bytes):
             value = BitStream(value)

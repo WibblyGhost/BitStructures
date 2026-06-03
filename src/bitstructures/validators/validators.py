@@ -2,12 +2,12 @@ from collections.abc import Iterable
 from typing import override
 
 from bitstructures.base.bitstream import BitStream
-from bitstructures.base.codec import BitsInt, StackC
+from bitstructures.base.codec import Bits, StackC
 from bitstructures.base.objects import Container
 from bitstructures.exceptions import BlacklistError, WhitelistError, add_codec_to_traceback
 
 
-class Blacklisted(BitsInt):
+class Blacklisted(Bits):
     """
     Prevents parsing/building a certain range of values, failing to do so
     will raise a BlacklistedError.
@@ -51,7 +51,7 @@ class Blacklisted(BitsInt):
         super().io_build(io, context, codecs)
 
 
-class Whitelisted(BitsInt):
+class Whitelisted(Bits):
     """
     Only allows parsing/building a certain range of values, failing to do so
     will raise a WhitelistedError.

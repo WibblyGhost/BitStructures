@@ -1,5 +1,8 @@
 from typing import Any, Self
 
+from bitarray import bitarray
+from bitarray.util import ba2int, int2ba
+
 from bitstructures.exceptions import ReadError, SizeError, WriteError
 
 
@@ -14,17 +17,18 @@ class BitStream:
     instead of reading the memory object.
     """
 
-    def __init__(self, buffer: bytes | str = b"", /) -> None:
-        if isinstance(buffer, str):
-            # Strings, '0b1001' or '1001'
-            buffer = self._validate_string(buffer)
-            self._size = len(buffer)
+    def __init__(self, buffer: bitarray | bytes | str = b"", /) -> None:
+        self.stream: bitarray
+        assert isinstance(buffer, bitarray | bytes | str)
+        if isinstance(buffer, bitarray):
             self.stream = buffer
             return
 
-        # Bytes, b'\x01\x02'
-        self._size = len(buffer * 8)
-        self.stream = "".join(bin(b)[2:].zfill(8) for b in buffer)
+        self.stream = bitarray()
+        if isinstance(buffer, str):
+            # Strings, '0b1001' or '1001'
+            buffer = self._validate_string(buffer)
+        self.stream += bitarray(buffer)
 
     @staticmethod
     def _validate_string(string: str) -> str:
@@ -36,7 +40,7 @@ class BitStream:
     @property
     def bin(self) -> str:
         """Gets a binary representation by reading the string buffer."""
-        return f"0b{self.stream}"
+        return self.stream.to01()
 
     def __str__(self) -> str:
         """
@@ -60,7 +64,7 @@ class BitStream:
 
     def __len__(self) -> int:
         """Returns the bit size of the current object."""
-        return self._size
+        return len(self.stream)
 
     def __int__(self) -> int:
         """
@@ -68,7 +72,7 @@ class BitStream:
         could lead to an integer overflow if you attempt to read
         a buffer that is larger than the size of an integer.
         """
-        return int(self.stream, 2)
+        return ba2int(self.stream)
 
     def __bytes__(self) -> bytes:
         """
@@ -79,12 +83,7 @@ class BitStream:
             raise SizeError(
                 f"Cannot convert a BitStream of length {len(self)} to bytes, must be divisable by 8"
             )
-        i = 0
-        bytes_ = b""
-        while i < self._size:
-            bytes_ += int(self.stream[i : i + 8], 2).to_bytes()
-            i += 8
-        return bytes_
+        return self.stream.tobytes()
 
     def __hash__(self) -> int:
         """Provide hashing functionality to our bitstream."""
@@ -108,9 +107,8 @@ class BitStream:
         contents of the other buffer into our StringIO instance.
         """
         if isinstance(other, BitStream):
-            self._size = self._size + other._size
-            self.stream = self.stream + other.stream
-        elif isinstance(other, bytes | str):
+            self.stream += other.stream
+        elif isinstance(other, bitarray | bytes | str):
             # Recurse into the above statement
             self += BitStream(other)
             return self
@@ -124,8 +122,7 @@ class BitStream:
 
     def peek(self, size: int) -> "BitStream":
         """Looks through the string buffer without modifying the stream."""
-        stream = self.stream[:size]
-        return BitStream(stream)
+        return BitStream(self.stream[:size])
 
     def read(self, size: int | None = -1) -> "BitStream":
         """Reads a specified amount of bits through the string buffer modifying the stream."""
@@ -138,7 +135,6 @@ class BitStream:
             )
         try:
             # Modify the stream buffer
-            self._size -= size
             out, self.stream = self.stream[:size], self.stream[size:]
             return BitStream(out)
         except Exception as err:
@@ -158,13 +154,13 @@ class BitStream:
             if isinstance(value, BitStream):
                 self += value
                 return
-            self += f"{value:b}".zfill(size)
+            self += int2ba(value, size)
         except Exception as err:
             raise WriteError from err
 
     def copy(self) -> Self:
         """Returns a complete copy of the underlying bitstring and assigns it to a new object."""
-        return self.__class__(self.stream)
+        return self.__class__(self.stream.copy())
 
     def bit_length(self) -> int:
         """Just returns the len of this BitStream, meant to mirror int.bit_length()."""

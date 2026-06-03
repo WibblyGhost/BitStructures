@@ -52,7 +52,7 @@ class CodecError(BitstructuresError):
         self.parent = context
         self.codecs = codecs
         self.add_note(f"Peek(len={len(io)}): {io.bin}")
-        self.add_note(f"Packet Stack:\n{context!s}")
+        self.add_note(f"Packet Stack:\n{context.pprint()!s}")
         self.add_note(f"Codec Stack:\n{codecs.pprint()}")
 
 
