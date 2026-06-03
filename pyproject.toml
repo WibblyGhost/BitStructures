@@ -1,15 +1,53 @@
 ### BUILD SYSTEM ###
 # NOTE: See https://peps.python.org/pep-0621/
+[build-system]
+requires = ["setuptools>=60", "setuptools-git-versioning"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "bitstructures"
 description="Bit Structures"
 authors=[{name="WibblyGhost"}]
-dynamic = ["version", "readme"]
+# Files
+dynamic = ["version"]
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+# Indexing
+keywords = ["bit", "bits", "struct", "structure", "encoder", "decoder"]
+classifiers = [
+    # How mature is this project? Common values are
+    #   3 - Alpha
+    #   4 - Beta
+    #   5 - Production/Stable
+    "Development Status :: 5 - Production/Stable",
+
+    # Indicate who your project is intended for
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: Software Development :: Compilers",
+    "Topic :: Software Development :: Disassemblers",
+    "Topic :: Software Development :: Embedded Systems",
+    "Topic :: System :: Networking",
+    "Topic :: Utilities",
+
+    # Specify the Python versions you support here.
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+# Requirements
 requires-python= ">=3.13"
-urls = {url = "https://github.com/WibblyGhost/bitstructures"}
 dependencies = [
     "bitarray>=3.8.0",
 ]
+
+[project.urls]
+# Homepage = "https://example.com"
+# Documentation = "https://readthedocs.org"
+Repository = "https://github.com/WibblyGhost/BitStructures.git"
+Issues = "https://github.com/WibblyGhost/BitStructures/issues"
+# Changelog = "https://github.com/me/spam/blob/master/CHANGELOG.md"
 
 [dependency-groups]
 dev = [
@@ -29,10 +67,6 @@ build = [
     "setuptools>=60",
     "setuptools-git-versioning>=2.1.0",
 ]
-
-[build-system]
-requires = ["setuptools>=60", "setuptools-git-versioning"]
-build-backend = "setuptools.build_meta"
 
 [tool.setuptools-git-versioning]
 enabled = true

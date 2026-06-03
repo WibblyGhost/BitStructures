@@ -4,10 +4,10 @@ default_install_hook_types:
   - post-checkout
   - post-merge
   - post-rewrite
-exclude: "(firmware|reports|logs|.devcontainer|pymibs)/.*"
+exclude: "(reports|logs|.devcontainer)/.*"
 repos:
   - repo: https://github.com/adrienverge/yamllint.git
-    rev: v1.37.1
+    rev: v1.38.0
     hooks:
       - id: yamllint
         name: yamllint
@@ -35,14 +35,16 @@ repos:
       - id: check-docstring-first
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.13.3
+    rev: v0.15.12
     hooks:
       # Run the linter.
       - id: ruff-check
+        name: ruff-check
         args: [--fix]
 
       # Run the formatter.
       - id: ruff-format
+        name: ruff-format
 
   - repo: local
     hooks:
@@ -54,29 +56,12 @@ repos:
         language: system
         entry: uv run mypy
         files: .*(\.py|\.pyi)$
-        args: [src]
-        pass_filenames: false
-
-  - repo: local
-    hooks:
-      - id: pytest
-        name: pytest
-        stages:
-          - pre-commit
-          - pre-push
-        language: system
-        entry: uv run pytest
-        files: (src|tests)/.*(\.py|\.pyi)$
-        args:
-          - tests
-          - -q
-          - --no-summary
-          - --no-header
+        args: [features, ci, scripts]
         pass_filenames: false
 
   - repo: https://github.com/astral-sh/uv-pre-commit
     # uv version.
-    rev: 0.8.23
+    rev: 0.11.8
     hooks:
       # Ensure the lockfile is up-to-date
       - id: uv-lock
