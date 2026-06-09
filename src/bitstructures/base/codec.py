@@ -98,6 +98,21 @@ class Codec(CodecProtocol):
 
     *Functional*
     >>>  "codewords" / Codec(lambda packet: packet.codeword_size)
+
+    Codec's build and parse in a recursive manor, always prioritizing subcodecs first, e.g.
+    >>> | Struct()
+    >>>  -| .build
+    >>>   | .io_build
+    >>>    -| Bits(3)
+    >>>     | .io_build
+    >>>    -| Bits(5)
+    >>>     | .io_build
+    >>>    -| Struct()
+    >>>     | .io_build
+    >>>      -| Enum(6)
+    >>>       | .io_build
+    >>>      -| Padding(2)
+    >>>       | .io_build
     """
 
     def __init__(self, subcodec: "Codec | None" = None) -> None:
@@ -496,6 +511,9 @@ class Struct(Codec, StructProtocol):
 
     @override
     def io_build(self, io: BitStream, context: Container, codecs: StackC) -> None:
+        # NOTE: Please be careful writing to this container
+        # any modifications to the container should be done
+        # on a shallow copy of the container. E.g. ctx = container.copy()
         add_codec_to_traceback(self, codecs)
 
         if self.name == self.__PRIVATE_NAME:
@@ -526,25 +544,25 @@ class Struct(Codec, StructProtocol):
         - Not modified in subclasses
         - Called externally via users.
         """
+        # NOTE: Please be careful writing to this container
+        # any modifications to the container should be done
+        # on a shallow copy of the container. E.g. ctx = container.copy()
         if not isinstance(container, Container):
             raise TypeError(
-                f"Build only accepts a argument with type {Container.__name__}, "
-                f"got {type(container)}"
+                f"Build only accepts a argument with type {Container.__name__}, got {type(container)}"
             )
         codecs = StackC()
         add_codec_to_traceback(self, codecs)
 
         io = BitStream()
-        # Copy container, and unfreeze this one (needed for IO setting operations)
-        context = container.copy()
         try:
-            self.io_build(io, context, codecs)
+            self.io_build(io, container, codecs)
             if len(io) % 8 != 0:
                 raise SizeOfError(
                     io,
-                    context,
+                    container,
                     codecs,
-                    f"Built bits must be divisible by 8 (byte), {context!r} {len(context)=}",
+                    f"Built bits must be divisible by 8 (byte), {container!r} {len(container)=}",
                 )
             return io
         except CodecError:
@@ -552,7 +570,7 @@ class Struct(Codec, StructProtocol):
             #              information required.
             raise
         except Exception as err:
-            raise BuildError(io, context, codecs, repr(err)) from err
+            raise BuildError(io, container, codecs, repr(err)) from err
 
     def sizeof(self, io: BitStream, context: Container, codecs: StackC) -> int:
         if isinstance(self.size, int) and self.size > 0:
@@ -1030,20 +1048,21 @@ class Enum(Bits):
     def io_build(self, io: BitStream, context: Container, codecs: StackC) -> None:
         add_codec_to_traceback(self, codecs)
 
-        enum = context[self.name]
+        ctx = context.copy()  # Copy to prevent overiding original container
+        enum = ctx[self.name]
         if not isinstance(enum, EnumBase):
             # Just checking if the value is a valid enum
             if enum in self._enum:  # type: ignore[operator]
-                context.set(self.name, self._enum(enum))  # type: ignore[operator]
+                ctx.set(self.name, self._enum(enum))  # type: ignore[operator]
             else:
                 try:
-                    context.set(self.name, self._enum[enum])  # type: ignore[index]
+                    ctx.set(self.name, self._enum[enum])  # type: ignore[index]
                 except KeyError:
                     if self._default.__class__ is _Error:
-                        Error.raise_error(io, context, codecs)
+                        Error.raise_error(io, ctx, codecs)
                     # It's just an integer/value, this is a _Pass condition
-                    context.set(self.name, enum)
-        super().io_build(io, context, codecs)
+                    ctx.set(self.name, enum)
+        super().io_build(io, ctx, codecs)
 
 
 class Mapping(Enum):
@@ -1122,16 +1141,17 @@ class Const(Codec):
     def io_build(self, io: BitStream, context: Container, codecs: StackC) -> None:
         add_codec_to_traceback(self, codecs)
 
-        if self.name in context and (value := context[self.name]) != self.constant:
+        ctx = context.copy()  # Copy to prevent overiding original container
+        if self.name in ctx and (value := ctx[self.name]) != self.constant:
             raise ConstantError(
                 io,
-                context,
+                ctx,
                 codecs,
                 f"Was expecting the value {self.constant} but got {value}",
             )
-        if self.name not in context:
-            context.set(self.name, self.constant)
-        self.subcodec.io_build(io, context, codecs)
+        if self.name not in ctx:
+            ctx.set(self.name, self.constant)
+        self.subcodec.io_build(io, ctx, codecs)
 
 
 class Default(Codec):
@@ -1157,9 +1177,10 @@ class Default(Codec):
     def io_build(self, io: BitStream, context: Container, codecs: StackC) -> None:
         add_codec_to_traceback(self, codecs)
 
+        ctx = context.copy()  # Copy to prevent overiding original container
         if self.name not in context:
-            context.set(self.name, self.default)
-        self.subcodec.io_build(io, context, codecs)
+            ctx.set(self.name, self.default)
+        self.subcodec.io_build(io, ctx, codecs)
 
 
 class Array(Codec):
@@ -1248,16 +1269,17 @@ class RawBits(Codec):
     def io_build(self, io: BitStream, context: Container, codecs: StackC) -> None:
         add_codec_to_traceback(self, codecs)
 
-        if self.name not in context:
+        ctx = context.copy()  # Copy to prevent overiding original container
+        if self.name not in ctx:
             attr_error = AttributeError(
-                f"Attempted to access {self.name!r} from the object {context!r}"
+                f"Attempted to access {self.name!r} from the object {ctx!r}"
             )
-            attr_error.add_note(f"Parent={context._ if hasattr(context, '_') else None}")
-            raise attr_error from BuildError(io, context, codecs)
-        value = context[self.name]
+            attr_error.add_note(f"Parent={ctx._ if hasattr(ctx, '_') else None}")
+            raise attr_error from BuildError(io, ctx, codecs)
+        value = ctx[self.name]
         if isinstance(value, bytes):
-            context.set(self.name, BitStream(value))
-        self._write_io(io, context, codecs, context[self.name], self.sizeof(io, context, codecs))
+            ctx.set(self.name, BitStream(value))
+        self._write_io(io, ctx, codecs, ctx[self.name], self.sizeof(io, ctx, codecs))
 
 
 # ---------------- Computed ----------------

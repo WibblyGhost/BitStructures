@@ -3,7 +3,7 @@ from bitstructures.base.objects import Container
 
 def bitshift(packet: Container[int], field_name: str, msb: bool = False) -> int:
     """
-    Join two bitshifted ingeters by appending the second integer
+    Join two bitshifted integers by appending the second integer
     onto the end of the first integer.
 
     Works on LSB calculations by default

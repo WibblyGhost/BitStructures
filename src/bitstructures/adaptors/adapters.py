@@ -45,15 +45,16 @@ class Adapter(Codec, AdapterProtocol):
     def io_build(self, io: BitStream, context: Container, codecs: StackC) -> None:
         add_codec_to_traceback(self, codecs)
 
-        c_value = context[self.name]
+        ctx = context.copy()  # Copy to prevent overiding original container
+        c_value = ctx[self.name]
         try:
-            encoded = self.encode(context, c_value)
+            encoded = self.encode(ctx, c_value)
         except CodecError:
             raise  # These errors already have our traceback
         except Exception as err:
-            raise EncodeError(io, context, codecs) from err
-        context.set(self.name, encoded)
-        self.subcodec.io_build(io, context, codecs)
+            raise EncodeError(io, ctx, codecs) from err
+        ctx.set(self.name, encoded)
+        self.subcodec.io_build(io, ctx, codecs)
 
 
 # ---------------- Adapters ----------------

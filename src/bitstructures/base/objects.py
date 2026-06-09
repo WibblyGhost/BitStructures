@@ -1,6 +1,7 @@
 from collections.abc import Generator
+from copy import copy
 from enum import Enum as Enum_
-from typing import Any, SupportsIndex, override
+from typing import Any, Self, SupportsIndex, override
 
 from bitstructures.constants import PP_DETENT, PP_INDENT, PP_TAB
 from bitstructures.exceptions import FrozenError
@@ -48,13 +49,28 @@ class Container[VT: Any = Any](dict[str, VT]):  # noqa: PLW1641
 
     __slots__ = ("__parent",)  # store only the extra attribute, no __dict__
 
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
+        # Needed for deepcopy
+        class_ = dict.__new__(cls, *args, **kwargs)
+        class_.__parent = None  # noqa: SLF001
+        return class_
+
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__()
         dict.update(self, *args, **kwargs)
         self.__parent: Container[VT] | None = None
 
+    def __copy__(self) -> "Container[VT]":
+        """Create a new Container and keep references to all values in the object."""
+        cls = type(self)()
+        cls.update(self.items())
+        if self.__parent is not None:
+            cls.set_parent(self.__parent)
+        return cls
+
     def copy(self) -> "Container[VT]":
-        return Container(self.items())
+        """Create a new Container and keep references to all values in the object."""
+        return copy(self)
 
     def __eq__(self, other: object, /) -> bool:
         if self is other:
@@ -69,7 +85,7 @@ class Container[VT: Any = Any](dict[str, VT]):  # noqa: PLW1641
             for k, v in self.items()
             if not (k.startswith("__") or k.startswith(f"_{self.__class__.__name__}"))
         }
-        return f"{self.__class__.__name__}({items!r})"
+        return repr(items)
 
     def set_parent(self, parent: "Container") -> None:
         assert isinstance(parent, Container)
