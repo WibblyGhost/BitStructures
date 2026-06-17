@@ -549,7 +549,8 @@ class Struct(Codec, StructProtocol):
         # on a shallow copy of the container. E.g. ctx = container.copy()
         if not isinstance(container, Container):
             raise TypeError(
-                f"Build only accepts a argument with type {Container.__name__}, got {type(container)}"
+                f"Build only accepts a argument with type {Container.__name__}, "
+                f"got {type(container)}"
             )
         codecs = StackC()
         add_codec_to_traceback(self, codecs)
@@ -1336,11 +1337,13 @@ class Bitshift[T: Any = int](Codec):
         field_name: str,
         funct: Callable[..., T],
         *args: Any,
+        bitshift: int,
         msb: bool,
         **kwargs: Any,
     ) -> None:
         super().__init__()
         self._field_name = field_name
+        self._bitshift = bitshift
         self._msb = msb
         self._funct = funct
         self._args = args
@@ -1352,10 +1355,14 @@ class Bitshift[T: Any = int](Codec):
 
         # NOTE: The Bitshift class doesn't consume the bitstream
         if f"{self._field_name}_p1" in context:
-            value = self._funct(context, self._field_name, self._msb, *self._args, **self._kwargs)
+            value = self._funct(
+                context, self._field_name, self._bitshift, self._msb, *self._args, **self._kwargs
+            )
         elif f"{self._field_name}_p1" in context._:
             # Also look inside the context container
-            value = self._funct(context._, self._field_name, self._msb, *self._args, **self._kwargs)
+            value = self._funct(
+                context._, self._field_name, self._bitshift, self._msb, *self._args, **self._kwargs
+            )
         else:
             raise KeyError from ParseError(io, context, codecs)
         context[self.name] = value
