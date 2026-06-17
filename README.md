@@ -39,7 +39,7 @@ TODO:
 
 ### BitStream
 
-`BitStream` is a custom IO buffer class which works on a `StringIO` base.
+`BitStream` is a custom IO buffer class which works on a `bitarray` base.
 Taking in a bytes/bits buffer type and creating a buffer to read and write upon.
 This class contains many methods to make it easier to convert between bits and integers or bytes.
 Writing and reading to/from the stream modifies the underlying buffer.
@@ -185,8 +185,8 @@ class Codec(CodecProtocol):
 > [!NOTE]
 > This section is different to the Default Codec type defined later down.
 
-Some `Codec`'s can take a *default* argument which will take a Singleton object of `Pass` or `Error`, if this default is triggered then it will either ignore the failed conditional or error out of building/parsing.
-These Codec's don't need to be initialised via `Pass()` or `Error()`, since they are Singletons assigned to a variable.
+Some Codec's can take a *default* argument which will take a Singleton object of `Pass` or `Error`, if this default is triggered then it will either ignore the failed conditional or error out of building/parsing.
+These Codec's don't need to be initialised via `Pass()` or `Error()`, since they are **singletons** assigned to a variable.
 Please see the *Pass* and *Error* Codec headers for more information around these Codecs
 
 #### Pass
@@ -203,7 +203,7 @@ class Pass(Codec):
 
 #### Error
 
-Much like the Pass codec but instead when this Codec is parsed or built, will raise an exception.
+Much like the `Pass` codec but instead when this Codec is parsed or built, will raise an exception.
 
 ```python
 class Error(Codec):
@@ -218,7 +218,7 @@ class Error(Codec):
 
 #### NotImplementedCodec
 
-Acts exactly the same as the Error Codec, but is useful for flagging future development for this Codec.
+Acts exactly the same as the `Error` Codec, but is useful for flagging future development for this Codec.
 
 ```python
 NotImplementedCodec = Error
@@ -228,11 +228,11 @@ NotImplementedCodec = Error
 
 #### Struct
 
-`Struct`'s are the main building block and wrapper of codecs, these are what we use to call the `parse()` and `build()` methods and contain an array of `Codec`'s.
+`Struct`'s are the main building block and wrapper of codecs, these are what we use to call the `parse()` and `build()` methods and contain an array of Codec's.
 These can be nested inside each other, and may be either embedded into the current structure or wrapped into a seperate container upon parsing and building.
 
 
-Most `Struct`'s contain an `embedded` attribute which is enabled by default when it has no name assigned, but can also be manually assigned. This make all the defined `Codec`'s inside the `Struct` embed to the parent `Codec`.
+Most `Struct`'s contain an `embedded` attribute which is enabled by default when it has no name assigned, but can also be manually assigned. This make all the defined Codec's inside the `Struct` embed to the parent `Codec`.
 
 > [!NOTE]
 > `embedded` toggling is still an experimental feature when toggled manually, and can cause unpredictable indexing of other `Codec`'s particularly the `Pointer` for example.
@@ -254,7 +254,7 @@ class Struct(Codec, StructProtocol):
 
 #### Pointers
 
-Sometimes you need advanced IO handling so that you can read IO out of sequence. The Pointer class helps forward the
+Sometimes you need advanced IO handling so that you can read IO out of sequence. The `Pointer` class helps forward the
 IO stream, parse the later stream, then reverse the stream and parse the original segment.
 
 ```python
@@ -400,7 +400,7 @@ class Bits(Codec):
 
 #### Enum
 
-The Enum Codec is a Bits type which contains a string to integer mapping for its parsed/built values.
+The `Enum` Codec is a Bits type which contains a string to integer mapping for its parsed/built values.
 By default, if a value cannot be mapped, it will raise an exception, but this can be changed to ignore missing
 mappings via the `default=Pass` keyword argument.
 
@@ -429,7 +429,7 @@ class Enum(Bits):
 
 #### Mapping
 
-Works exactly the same as the Enum Codec except that it takes a dictionary as its initialization.
+Works exactly the same as the `Enum` Codec except that it takes a dictionary as its initialization.
 
 ```python
 class Mapping(Enum):
@@ -526,7 +526,7 @@ class Array(Codec):
 
 #### Raw Bits
 
-This codec just copies over the bitstream into the Container and vice versa.
+This codec just copies over the bitstream into the `Container` and vice versa.
 Useful if you want to include a payload but don't want to perform any calculations on the output values.
 
 ```python
@@ -545,7 +545,10 @@ class RawBits(Codec):
 
 #### Computed
 
-Special Codec type which can perform calculations and representations of values **without** modifying the IO stream.
+Special Codec type which can perform calculations and representations of values **without** modifying the IO stream upon parsing.
+
+> [!note]
+> This doesn't contain any `io_build` functionality and therefore cannot be built into a bitstream. Acts identically to the `Pass` Codec in that mannor.
 
 ```python
 class Computed[T: ValueType](Codec):
@@ -587,7 +590,7 @@ class Bitshift[T: Any = int](Codec):
 
 #### Checksum
 
-Checksum is a very special Codec type which will perform checksum calculations on your packet after building.
+`Checksum` is a very special Codec type which will perform checksum calculations on your packet after building.
 The fields to perform the checksum calculations must be listed and present before the checksum Codec.
 
 ```python
@@ -630,7 +633,7 @@ class Checksum(Bits):
 
 #### Greedy Array
 
-Subset of the Array Codec but instead of giving the Codec a hardcoded container count, this Codec will keep parsing until an end of stream (EOS).
+Subset of the `Array` Codec but instead of giving the Codec a hardcoded container count, this Codec will keep parsing until an end of stream (EOS).
 It can also take a *max_count* argument which will only parse the stream up to the specified count and no further.
 Or the *max_count* argument can take a *lambda* expression.
 
@@ -660,7 +663,7 @@ class GreedyArray(Array):
 
 #### Greedy Bits
 
-Defines a Greedy bits consumer which will keep consuming the IO stream until an end of stream (EOS).
+Defines a greedy bits consumer which will keep consuming the IO stream until an end of stream (EOS).
 The output value will be a `BitStream` type. It works the same way as the `RawBits` Codec.
 
 It can also take a *max_size* argument which will only parse the stream up to the specified length and no further.
@@ -700,7 +703,7 @@ class GreedyBits(Codec):
 
 #### Blacklisted
 
-Simple wrapper for the Bits Codec which will raise an exception if the parsed value is in the blacklisted range.
+Simple wrapper for the `Bits` Codec which will raise an exception if the parsed value is in the blacklisted range.
 
 ```python
 class Blacklisted(Bits):
@@ -716,7 +719,7 @@ class Blacklisted(Bits):
 
 #### Whitelisted
 
-Simple wrapper for the Bits Codec which will raise an exception if the parsed value is not in the whitelisted range.
+Simple wrapper for the `Bits` Codec which will raise an exception if the parsed value is not in the whitelisted range.
 
 ```python
 class Whitelisted(Bits):
@@ -757,7 +760,7 @@ class Adapter(Codec, AdapterProtocol):
 
 #### IpAddress
 
-This adapter converts the defined Codec into an IpAddress string and back into an integer field.
+This adapter converts the defined Codec into an `IpAddress` string and back into an integer field.
 
 ```python
 class IpAddress(Adapter):
@@ -898,5 +901,6 @@ IP_PACKET = Struct(
 
 Whilst building this package, here's a few decisions and thoughts I had:
 
-Originally I was going to use [bitstring](https://pypi.org/project/bitstring/) which looked reasonable but I found the parse/build speed slow.
-Then I checked out [bitarray](https://pypi.org/project/bitarray/) which used C DLL's to efficiently work on boolean arrays, this was quite effective and I was using this package as our base for a while. However after a variety of testing their speeds and footprints, I actually discovered that storing the bitstream as a string was actually the fastest way of handling our streams. I even considered using the StringIO and BytesIO builtin packages.
+- `StringIO`/`BytesIO` was my original plan to use but it didn't handle seeking IO very well, and copying one `IO` object into a new one everytime I needed to modify the stream was inefficient.
+- Then I checked out [`bitstring`](https://pypi.org/project/bitstring/) which looked reasonable but I found the parse/build speed slow. It uses the `bitarray` library underneath, implementing wrapper functions.
+- Then I checked out [`bitarray`](https://pypi.org/project/bitarray/) which used C DLL's to efficiently work on boolean arrays, this was quite effective and provided the low-level interfaces I required.
