@@ -1,4 +1,5 @@
-from typing import Any, Self
+from collections.abc import Generator
+from typing import Any, Self, overload
 
 from bitarray import bitarray
 from bitarray.util import ba2int, int2ba
@@ -101,7 +102,19 @@ class BitStream:
             return self == BitStream(other)
         raise TypeError(f"Cannot compare a {self.__class__.__name__} with a {type(other)}")
 
-    def __add__(self, other: Any) -> Self:
+    def __add__(self, other: Any) -> "BitStream":
+        """
+        Append another string buffer into this buffer by writing the
+        contents of the other buffer into our StringIO instance.
+        """
+        if isinstance(other, BitStream):
+            return BitStream(self.stream + other.stream)
+        if isinstance(other, bitarray | bytes | str):
+            # Recurse into the above statement
+            return self + BitStream(other)
+        raise TypeError(f"Cannot add {type(other)} to a {BitStream.__name__}")
+
+    def __iadd__(self, other: Any) -> Self:
         """
         Append another string buffer into this buffer by writing the
         contents of the other buffer into our StringIO instance.
@@ -109,15 +122,23 @@ class BitStream:
         if isinstance(other, BitStream):
             self.stream += other.stream
         elif isinstance(other, bitarray | bytes | str):
-            # Recurse into the above statement
-            self += BitStream(other)
-            return self
+            self.stream += BitStream(other).stream
         else:
             raise TypeError(f"Cannot add {type(other)} to a {BitStream.__name__}")
         return self
 
-    def __getitem__(self, s: slice) -> "BitStream":
+    def __iter__(self) -> Generator[int]:
+        """Returns either a 1 or 0 for each bit in the stream."""
+        yield from self.stream
+
+    @overload
+    def __getitem__(self, s: int) -> int: ...
+    @overload
+    def __getitem__(self, s: slice) -> "BitStream": ...
+    def __getitem__(self, s: slice | int) -> "BitStream | int":
         """Allow string slicing methods upon this class."""
+        if isinstance(s, int):
+            return self.stream[s]
         return BitStream(self.stream[s])
 
     def peek(self, size: int) -> "BitStream":
