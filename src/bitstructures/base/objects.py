@@ -20,6 +20,7 @@ class FrozenSlots:
         self._frozen: bool = False
 
     def freeze(self) -> None:
+        """Sets the frozen state, disallowing modification to the underlying class."""
         self._frozen = True
 
     def _check_frozen(self) -> None:
@@ -49,7 +50,7 @@ class Container[VT: Any = Any](dict[str, VT]):  # noqa: PLW1641
 
     __slots__ = ("__parent",)  # store only the extra attribute, no __dict__
 
-    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:  # noqa: D102
         # Needed for deepcopy
         class_ = dict.__new__(cls, *args, **kwargs)
         class_.__parent = None  # noqa: SLF001
@@ -88,6 +89,7 @@ class Container[VT: Any = Any](dict[str, VT]):  # noqa: PLW1641
         return repr(items)
 
     def set_parent(self, parent: "Container") -> None:
+        """Sets the parent Container object allowing accessing the parent's attributes."""
         assert isinstance(parent, Container)
         self.__parent = parent
 
@@ -119,9 +121,11 @@ class Container[VT: Any = Any](dict[str, VT]):  # noqa: PLW1641
             raise
 
     def set(self, name: str, value: VT) -> None:
+        """Sets an item inside our dictionary to a value."""
         self[name] = value
 
     def pprint(self, *, padding: str = "\t{t}{v:-^38}{t}\n", depth: int = 1) -> str:
+        """Returns a nice representation of this class with padding."""
         # RECURSIVE
         stack = ""
         for key, value in self.items():
@@ -176,14 +180,18 @@ class Stack[T: SupportsName](FrozenSlots):
         return len(self._items)
 
     def pop(self, index: SupportsIndex = -1) -> T:
+        """Remove an item from the top of the stack."""
         self._check_frozen()
         return self._items.pop(index)
 
     def set(self, index: SupportsIndex, value: T) -> None:
+        """Modify an item at a given index in the stack."""
         self._check_frozen()
         self._items[index] = value
 
-    def empty(self) -> bool:
+    @property
+    def is_empty(self) -> bool:
+        """Returns True if this Stack is empty."""
         return not self._items
 
     def _validate_item(self, item: T) -> None:
@@ -198,6 +206,7 @@ class Stack[T: SupportsName](FrozenSlots):
             raise key_error
 
     def push(self, item: T) -> None:
+        """Push an item ontop of the stack."""
         self._check_frozen()
         self._validate_item(item)
         self._items.append(item)
@@ -209,6 +218,7 @@ class Stack[T: SupportsName](FrozenSlots):
         yield from self._items
 
     def enumerate(self) -> Generator[tuple[int, T]]:
+        """Returns a tuple given an index and item pair enumeration."""
         yield from enumerate(self._items)
 
 
