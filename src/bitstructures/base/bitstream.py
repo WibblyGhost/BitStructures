@@ -1,10 +1,11 @@
 from collections.abc import Generator
-from typing import Any, Self, overload
+from typing import Self, overload
 
 from bitarray import bitarray
 from bitarray.util import ba2int, int2ba
 
 from bitstructures.exceptions import ReadError, SizeError, WriteError
+from bitstructures.typing import Buffer, BufferCmp
 
 
 class BitStream:
@@ -18,7 +19,7 @@ class BitStream:
     instead of reading the memory object.
     """
 
-    def __init__(self, buffer: bitarray | bytes | str = b"", /) -> None:
+    def __init__(self, buffer: Buffer = b"", /) -> None:
         self.stream: bitarray
         assert isinstance(buffer, bitarray | bytes | str)
         if isinstance(buffer, bitarray):
@@ -82,13 +83,47 @@ class BitStream:
         """
         if len(self) % 8 != 0:
             raise SizeError(
-                f"Cannot convert a BitStream of length {len(self)} to bytes, must be divisable by 8"
+                f"Cannot convert a {self.__class__.__name__} of length {len(self)} to bytes, "
+                f"must be divisable by 8"
             )
         return self.stream.tobytes()
 
     def __hash__(self) -> int:
         """Provide hashing functionality to our bitstream."""
-        return hash(self.stream)
+        return hash(self.stream.to01())
+
+    def __and__(self, other: BufferCmp) -> Self:
+        if isinstance(other, BitStream):
+            return self.__class__(self.stream & other.stream)
+        if isinstance(other, bitarray | bytes | str):
+            # Recurse into the above statement
+            return self & self.__class__(other)
+        return NotImplemented
+
+    def __or__(self, other: BufferCmp) -> Self:
+        if isinstance(other, BitStream):
+            return self.__class__(self.stream | other.stream)
+        if isinstance(other, bitarray | bytes | str):
+            # Recurse into the above statement
+            return self | self.__class__(other)
+        return NotImplemented
+
+    def __xor__(self, other: BufferCmp) -> Self:
+        if isinstance(other, BitStream):
+            return self.__class__(self.stream ^ other.stream)
+        if isinstance(other, bitarray | bytes | str):
+            # Recurse into the above statement
+            return self ^ self.__class__(other)
+        return NotImplemented
+
+    def __invert__(self) -> Self:
+        return self.__class__(~self.stream)
+
+    def __lshift__(self, n: int) -> Self:
+        return self.__class__(self.stream << n)
+
+    def __rshift__(self, n: int) -> Self:
+        return self.__class__(self.stream >> n)
 
     def __eq__(self, other: object) -> bool:
         """
@@ -97,71 +132,73 @@ class BitStream:
         """
         if isinstance(other, BitStream):
             return self.stream == other.stream
-        if isinstance(other, bytes | str):
+        if isinstance(other, bitarray | bytes | str):
             # Recurse into the above statement
-            return self == BitStream(other)
-        raise TypeError(f"Cannot compare a {self.__class__.__name__} with a {type(other)}")
+            return self == self.__class__(other)
+        return False
 
-    def __add__(self, other: Any) -> "BitStream":
+    def __add__(self, other: BufferCmp) -> Self:
         """
         Append another string buffer into this buffer by writing the
         contents of the other buffer into our StringIO instance.
         """
         if isinstance(other, BitStream):
-            return BitStream(self.stream + other.stream)
+            return self.__class__(self.stream + other.stream)
         if isinstance(other, bitarray | bytes | str):
             # Recurse into the above statement
-            return self + BitStream(other)
-        raise TypeError(f"Cannot add {type(other)} to a {BitStream.__name__}")
+            return self + self.__class__(other)
+        return NotImplemented
 
-    def __iadd__(self, other: Any) -> Self:
+    def __iadd__(self, other: BufferCmp) -> Self:
         """
         Append another string buffer into this buffer by writing the
         contents of the other buffer into our StringIO instance.
         """
         if isinstance(other, BitStream):
             self.stream += other.stream
-        elif isinstance(other, bitarray | bytes | str):
-            self.stream += BitStream(other).stream
-        else:
-            raise TypeError(f"Cannot add {type(other)} to a {BitStream.__name__}")
-        return self
+            return self
+        if isinstance(other, bitarray | bytes | str):
+            # Recurse into the above statement
+            self.stream += self.__class__(other).stream
+            return self
+        return NotImplemented
 
     def __iter__(self) -> Generator[int]:
-        """Returns either a 1 or 0 for each bit in the stream."""
+        """Returns either a 1 or 0 for all bits in the stream."""
         yield from self.stream
 
     @overload
     def __getitem__(self, s: int) -> int: ...
     @overload
-    def __getitem__(self, s: slice) -> "BitStream": ...
-    def __getitem__(self, s: slice | int) -> "BitStream | int":
+    def __getitem__(self, s: slice) -> Self: ...
+    def __getitem__(self, s: slice | int) -> "Self | int":
         """Allow string slicing methods upon this class."""
         if isinstance(s, int):
+            # The bitarray library returns an integer when getitem is int
             return self.stream[s]
-        return BitStream(self.stream[s])
+        return self.__class__(self.stream[s])
 
-    def peek(self, size: int) -> "BitStream":
+    def peek(self, size: int) -> Self:
         """Looks through the string buffer without modifying the stream."""
-        return BitStream(self.stream[:size])
+        return self.__class__(self.stream[:size])
 
-    def read(self, size: int | None = -1) -> "BitStream":
+    def read(self, size: int | None = -1) -> Self:
         """Reads a specified amount of bits through the string buffer modifying the stream."""
         if size is None or size < 0:
             return self
         if size > len(self):
             raise ReadError(
                 f"Cannot read {size} bits, reached the EOS or "
-                f"the current stream is shorter that specified size. stream={len(self)}"
+                f"the current stream is shorter than specified size. stream={len(self)}"
             )
         try:
             # Modify the stream buffer
             out, self.stream = self.stream[:size], self.stream[size:]
-            return BitStream(out)
+            return self.__class__(out)
         except Exception as err:
             raise ReadError from err
 
-    def write(self, value: "int | BitStream", size: int) -> None:
+    def write(self, value: "int | Self", size: int) -> None:
         """
         Writes values or bit buffers of a specified bit size
         through the string buffer modifying the stream.
@@ -173,7 +210,13 @@ class BitStream:
             )
         try:
             if isinstance(value, BitStream):
-                self += value
+                if value.bit_length() > size:
+                    raise WriteError(
+                        f"Cannot write a stream {value} of size {value.bit_length()}, "
+                        f"into a stream of size {size}"
+                    )
+                # Left pad the stream with bits
+                self += value.ljust(size)
                 return
             self += int2ba(value, size)
         except Exception as err:
@@ -186,3 +229,21 @@ class BitStream:
     def bit_length(self) -> int:
         """Just returns the len of this BitStream, meant to mirror int.bit_length()."""
         return len(self)
+
+    def ljust(self, width: int, fillbit: int = 0) -> Self:
+        """Returns a copy of the stream right-padded with the fill character."""
+        if fillbit not in {0, 1}:
+            raise ValueError("fillbit must be '0' or '1'")
+        if len(self) >= width:
+            return self.copy()
+        padding = bitarray([fillbit]) * (width - len(self))
+        return self + padding
+
+    def rjust(self, width: int, fillbit: int = 0) -> Self:
+        """Returns a copy of the stream left-padded with the fill character."""
+        if fillbit not in {0, 1}:
+            raise ValueError("fillbit must be '0' or '1'")
+        if len(self) >= width:
+            return self.copy()
+        padding = bitarray([fillbit]) * (width - len(self))
+        return self.__class__(padding + self.stream)

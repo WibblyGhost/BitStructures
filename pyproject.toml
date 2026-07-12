@@ -120,10 +120,8 @@ select = [
 ]
 fixable = ["ALL"]
 ignore = [
+    "D203",  # Incorrect black line before class
     "D100",  # Docstring in public module
-    "D102",  # Docstring in public method
-    "D203",  # Blank line before class
-    "D104",  # Docstring in public package
     "D105",  # Docstring in magic method
     "D212",  # Multiline Docstring Start
     "D205",  # Line between summary and description
@@ -133,9 +131,11 @@ ignore = [
 isort.split-on-trailing-comma = false
 
 [tool.ruff.lint.per-file-ignores]
+"**/__init__.py" = ["D104"]
 "tests/*.py" = ["SLF001", "PT013"]
-"typing.py" = ["D101", "D107"]
+"typing.py" = ["D101", "D107", "D102", "D100"]
 "exceptions.py" = ["D101", "D107"]
+"test_*.py" = ["D100", "D101", "D102"]
 
 [tool.ruff.format]
 # skip-magic-trailing-comma = true

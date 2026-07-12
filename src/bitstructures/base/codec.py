@@ -47,6 +47,7 @@ class SingletonMeta(__protocol_type):  # type: ignore[misc, valid-type]
     _instances: ClassVar[dict["SingletonMeta", type]] = {}
 
     def __call__(self, *args: Any, **kwargs: Any) -> type:
+        """Returns an instance of this class upon calling again."""
         if self not in self._instances:
             self._instances[self] = super().__call__(*args, **kwargs)
         return self._instances[self]
@@ -69,6 +70,7 @@ class StackC(Stack["Codec | StackC"]):
         return
 
     def pprint(self, *, depth: int = 1) -> str:
+        """Returns a nice representation of this class with padding."""
         # RECURSIVE
         padding = "\t{t}{v:-^38}{t}\n"
         stack = ""
@@ -128,6 +130,7 @@ class Codec(CodecProtocol):
 
     @property
     def name(self) -> str:
+        """Returns the name of this codec, set via 'name' / Codec."""
         return self._name
 
     @property
@@ -150,6 +153,7 @@ class Codec(CodecProtocol):
 
     @property
     def subcodec(self) -> "Codec":
+        """Returns the Subcodec that this Codec is based on."""
         return self._subcodec or self
 
     def _check_initialized(self) -> None:
@@ -398,6 +402,7 @@ class Struct(Codec, StructProtocol):
 
     @property
     def subcodecs(self) -> StackC:
+        """Returns the stack of Codec's listed in this Struct."""
         return self._subcodec_stack
 
     @override
@@ -574,6 +579,7 @@ class Struct(Codec, StructProtocol):
             raise BuildError(io, container, codecs, repr(err)) from err
 
     def sizeof(self, io: BitStream, context: Container, codecs: StackC) -> int:
+        """Returns the bit-size of this Structure/Codec."""
         if isinstance(self.size, int) and self.size > 0:
             return self.size
         return super().sizeof(io, context, codecs)
@@ -1020,6 +1026,7 @@ class Enum(Bits):
 
     @property
     def enum(self) -> EnumBase:
+        """Returns a read only enumeration object created via this class."""
         return self._enum
 
     @override

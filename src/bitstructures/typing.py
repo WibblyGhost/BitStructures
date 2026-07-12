@@ -1,6 +1,7 @@
-from collections import OrderedDict
 from collections.abc import Callable, ItemsView, KeysView, Sequence
 from typing import TYPE_CHECKING, Any, Protocol, Self, runtime_checkable
+
+from bitarray import bitarray
 
 if TYPE_CHECKING:
     from bitstructures.base.bitstream import BitStream
@@ -11,12 +12,13 @@ if TYPE_CHECKING:
 
 type _Value = Any | EnumBase | BitStream | Container
 type ValueType = _Value | Sequence[ValueType]
-type OrderedCollection[VT] = OrderedDict[str, VT]
 type DefaultType = _Pass | _Error
 type FunctType[T] = Callable[[Container], T]
 type ExpType = Callable[[int], int]
 # Can only take in ints, enumeration objects and raw bit streams
 type WriteIoType = int | EnumBase | BitStream
+type Buffer = bitarray | bytes | str
+type BufferCmp = Buffer | BitStream
 
 # ---- PROTOCOLS ----
 
