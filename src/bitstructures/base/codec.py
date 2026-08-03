@@ -1,4 +1,5 @@
 from collections.abc import Buffer, Callable, Collection, Iterable
+from collections.abc import Mapping as MappingType
 from contextlib import suppress
 from copy import deepcopy
 from typing import Any, ClassVar, NoReturn, Protocol, Self, override
@@ -782,7 +783,7 @@ class Switch[MKey: Any, MValue: Codec | Struct = Codec](Codec):
     def __init__(
         self,
         funct: FunctType[MKey],
-        mapping: dict[MKey, MValue],
+        mapping: MappingType[MKey, MValue],
         *,
         default: DefaultType | MValue = Error,
         embedded: bool = False,
@@ -817,8 +818,7 @@ class Switch[MKey: Any, MValue: Codec | Struct = Codec](Codec):
 
     @override
     def __rtruediv__(self, other: Any) -> Self:
-        for key, codec in self._mapping.items():
-            self._mapping[key] = other / codec
+        self._mapping = {key: other / codec for key, codec in self._mapping.items()}
         return super().__rtruediv__(other)
 
     @override
@@ -1093,7 +1093,7 @@ class Mapping(Enum):
     def __init__(
         self,
         size: int | FunctType[int],
-        map: dict[str, int | str],
+        map: MappingType[str, int | str],
         *,
         default: DefaultType = Error,
     ) -> None:
