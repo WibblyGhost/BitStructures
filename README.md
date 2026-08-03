@@ -1,9 +1,5 @@
 # BitStructures
 
-> [!NOTE]
-> This is a copy of the current repo here [BitStructures](https://github.com/WibblyGhost/BitStructures), feel free to modify this repo.
-> If any issues are found I would appreciate you also raising an issue there if you feel it regards Codec errors.
-
 ## Intro
 
 This package was inspired by many byte level decoders and structure packing that were made for python, many of them didn't really handle bit streams directly.
@@ -43,7 +39,7 @@ TODO:
 
 ### BitStream
 
-`BitStream` is a custom IO buffer class which works on a `StringIO` base.
+`BitStream` is a custom IO buffer class which works on a `bitarray` base.
 Taking in a bytes/bits buffer type and creating a buffer to read and write upon.
 This class contains many methods to make it easier to convert between bits and integers or bytes.
 Writing and reading to/from the stream modifies the underlying buffer.
@@ -51,7 +47,7 @@ Writing and reading to/from the stream modifies the underlying buffer.
 ```python
 class BitStream:
     """Custom IO class which converts a bytestream into a bitstream with read and write methods."""
-    stream: StringIO
+    stream: bitarray
     @property
     def bin(self) -> str: ...
     def __init__(self, buffer: bytes | str = b"", /) -> None:
@@ -909,4 +905,4 @@ IP_PACKET = Struct(
 Whilst building this package, here's a few decisions and thoughts I had:
 
 Originally I was going to use [bitstring](https://pypi.org/project/bitstring/) which looked reasonable but I found the parse/build speed slow.
-Then I checked out [bitarray](https://pypi.org/project/bitarray/) which used C DLL's to efficiently work on boolean arrays, this was quite effective and I was using this package as our base for a while. However after a variety of testing their speeds and footprints, I actually discovered that storing the bitstream as a string was actually the fastest way of handling our streams. I even considered using the StringIO and BytesIO builtin packages.
+Then I checked out [bitarray](https://pypi.org/project/bitarray/) which used C DLL's to efficiently work on boolean arrays, this was quite effective and I was using this package as our base for a while. However after a variety of testing their speeds and footprints, I actually discovered that storing the bitstream as a string was actually the fastest way of handling our streams. I even considered using the bitarray and BytesIO builtin packages.
