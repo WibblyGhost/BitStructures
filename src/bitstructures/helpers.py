@@ -7,7 +7,6 @@ def bitshift(packet: Container[int], field_name: str, bitshift: int, msb: bool =
     onto the end of the first integer.
 
     Works on LSB calculations by default
-    :bitshift: Is the bit_length of part 2 if msb==False otherwise it's the bit_length of part 1
     """
     # Left shift operation followed by a bitwise OR operation
     # This will append the part 2 to the end of part 1 and extend the packet
@@ -24,7 +23,6 @@ def reverse_bitshift(integer: int, bitshift: int, msb: bool = False) -> tuple[in
     integer to bitshift, and a bitshift amount.
 
     Works on LSB calculations by default
-    :bitshift: Is the bit_length of part 2 if msb==False otherwise it's the bit_length of part 1
     """
     # 1. Determine size of second packet
     # 2. Extract the second number

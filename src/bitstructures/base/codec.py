@@ -35,7 +35,7 @@ from bitstructures.typing import (
 __protocol_type = type(Protocol)
 
 
-class SingletonMeta(__protocol_type):  # type: ignore[misc, valid-type]
+class SingletonMeta(__protocol_type):
     """
     Defines a class that only ever needs to be initialised once,
     and is used globally without new classes being created.
@@ -47,11 +47,11 @@ class SingletonMeta(__protocol_type):  # type: ignore[misc, valid-type]
 
     _instances: ClassVar[dict["SingletonMeta", type]] = {}
 
-    def __call__(self, *args: Any, **kwargs: Any) -> type:
+    def __call__[T](self, *args: Any, **kwargs: Any) -> T:
         """Returns an instance of this class upon calling again."""
         if self not in self._instances:
             self._instances[self] = super().__call__(*args, **kwargs)
-        return self._instances[self]
+        return self._instances[self]  # pyrefly: ignore[bad-return]
 
 
 # ---------------- Base Class ----------------
@@ -245,20 +245,10 @@ class Codec(CodecProtocol):
         try:
             return io.read(size)
         except ReadError as err:
-            raise ParseError(
-                io,
-                context,
-                codecs,
-                "Ran into an error reading BitStream",
-            ) from err
+            raise ParseError(io, context, codecs, "Ran into an error reading BitStream") from err
 
     def _write_io(
-        self,
-        io: BitStream,
-        context: Container,
-        codecs: StackC,
-        value: WriteIoType,
-        size: int,
+        self, io: BitStream, context: Container, codecs: StackC, value: WriteIoType, size: int
     ) -> None:
         """
         Handles the reading of the BitStream's IO, raises a parsing error
@@ -299,7 +289,6 @@ class _Pass(Codec, metaclass=SingletonMeta):
 
     __PRIVATE_NAME = "__pass"
 
-    @override
     def __init__(self) -> None:
         self._name = self.__PRIVATE_NAME
         self._size = -1
@@ -338,7 +327,6 @@ class _Error(Codec, metaclass=SingletonMeta):
 
     __PRIVATE_NAME = "__error"
 
-    @override
     def __init__(self) -> None:
         self._name = self.__PRIVATE_NAME
         self._size = -1
@@ -374,11 +362,7 @@ class _Error(Codec, metaclass=SingletonMeta):
         cls, io: BitStream, context: Container, codecs: StackC, **kwargs: Any
     ) -> NoReturn:
         raise TriggeredError(
-            "This error was triggered via a default set to Error",
-            io,
-            context,
-            codecs,
-            **kwargs,
+            "This error was triggered via a default set to Error", io, context, codecs, **kwargs
         )
 
 
@@ -415,7 +399,8 @@ class Struct(Codec, StructProtocol):
               output size is what you expect.
         """
         try:
-            return sum(codec.size for codec in self.subcodecs)  # type: ignore[union-attr, misc]
+            # pyrefly: ignore [missing-attribute]
+            return sum(codec.size for codec in self.subcodecs)
         except Exception as err:
             raise err from SizeError(f"Cannot calculate size of current struct {self.name}")
 
@@ -434,7 +419,6 @@ class Struct(Codec, StructProtocol):
             return f"{self.name} / {self.__class__.__name__}({self._size}, {self.embedded=})"
         return f"{self.name} / {self.__class__.__name__}({self.embedded=})"
 
-    @override
     def __init__(self, *args: Any, embedded: bool = False) -> None:
         self._subcodec_stack: StackC = StackC()
         super().__init__()
@@ -475,10 +459,7 @@ class Struct(Codec, StructProtocol):
                 raise StackError(io, context, codecs, "Parsed stack is empty")
             if readall and len(io) != 0:
                 raise BitsIoError(
-                    io,
-                    context,
-                    codecs,
-                    f"IO hasn't reached a terminator but {readall=}",
+                    io, context, codecs, f"IO hasn't reached a terminator but {readall=}"
                 )
             return context
         except CodecError:
@@ -579,6 +560,7 @@ class Struct(Codec, StructProtocol):
         except Exception as err:
             raise BuildError(io, container, codecs, repr(err)) from err
 
+    @override
     def sizeof(self, io: BitStream, context: Container, codecs: StackC) -> int:
         """Returns the bit-size of this Structure/Codec."""
         if isinstance(self.size, int) and self.size > 0:
@@ -603,7 +585,6 @@ class Pointer(Struct):
     )
     """
 
-    @override
     def __init__(
         self,
         start_codec: Iterable[Codec],
@@ -640,12 +621,7 @@ class Pointer(Struct):
             # Swap the order of the start and end IO, then parse normally
             swapped_io = end + start
         except ReadError as err:
-            raise ParseError(
-                io,
-                context,
-                codecs,
-                "Ran into an error reading BitStream",
-            ) from err
+            raise ParseError(io, context, codecs, "Ran into an error reading BitStream") from err
         super().io_parse(swapped_io, context, codecs)
 
     @override
@@ -681,7 +657,6 @@ class Conditional(Codec):
     >>> "payload" / Conditional(lambda packet: packet.protocol, UDP, Error),
     """
 
-    @override
     def __init__(
         self,
         condition: FunctType[bool],
@@ -737,10 +712,7 @@ class Conditional(Codec):
         condition = self.condition(context)
         if not isinstance(condition, bool):
             raise ParseError(
-                io,
-                context,
-                codecs,
-                f"Condition returned a non-bool value {condition!r}",
+                io, context, codecs, f"Condition returned a non-bool value {condition!r}"
             )
         if condition:
             self._then.io_parse(io, context, codecs)
@@ -754,10 +726,7 @@ class Conditional(Codec):
         condition = self.condition(context)
         if not isinstance(condition, bool):
             raise ParseError(
-                io,
-                context,
-                codecs,
-                f"Condition returned a non-bool value {condition!r}",
+                io, context, codecs, f"Condition returned a non-bool value {condition!r}"
             )
         if condition:
             self._then.io_build(io, context, codecs)
@@ -779,7 +748,6 @@ class Switch[MKey: Any, MValue: Codec | Struct = Codec](Codec):
     )
     """
 
-    @override
     def __init__(
         self,
         funct: FunctType[MKey],
@@ -799,6 +767,7 @@ class Switch[MKey: Any, MValue: Codec | Struct = Codec](Codec):
                 codec.embedded = embedded
         if embedded is True and isinstance(self._default, Struct):
             self._default.rename(self.name)
+            # pyrefly: ignore [bad-assignment]
             self._default.embedded = embedded
         # NOTE: This is the one of the few class that is allowed a size of 0
         self._size = 0
@@ -852,13 +821,7 @@ class Switch[MKey: Any, MValue: Codec | Struct = Codec](Codec):
             if self._default.__class__ is _Pass:
                 return
             if self._default.__class__ is _Error:
-                Error.raise_error(
-                    io,
-                    context,
-                    codecs,
-                    key=mapping_key,
-                    mapping=list(self._mapping),
-                )
+                Error.raise_error(io, context, codecs, key=mapping_key, mapping=list(self._mapping))
             self._default.io_build(io, context, codecs)
             return
         subcodec = self._mapping[mapping_key]
@@ -921,7 +884,6 @@ class Padding(Codec):
 
     __PRIVATE_NAME = "__padding"
 
-    @override
     def __init__(self, size: int, /, *, pattern: int = 0b0) -> None:
         super().__init__()
         self._name = self.__PRIVATE_NAME
@@ -969,7 +931,6 @@ class Bits(Codec):
     >>> "int1" / BitInts(8)
     """
 
-    @override
     def __init__(self, size: int | FunctType[int]) -> None:
         super().__init__()
         self._size = size
@@ -1010,16 +971,12 @@ class Enum(Bits):
     )
     """
 
-    @override
     def __init__(
-        self,
-        size: int | FunctType[int],
-        *,
-        default: DefaultType = Error,
-        **kwargs: int | str,
+        self, size: int | FunctType[int], *, default: DefaultType = Error, **kwargs: int | str
     ) -> None:
         super().__init__(size)
-        self._enum: EnumBase = EnumBase("enum", kwargs)  # type: ignore[call-arg]
+        # pyrefly: ignore [bad-assignment]
+        self._enum: EnumBase = EnumBase("enum", kwargs)
         # Make sure to use the __rdiv__ here not rename to
         # return a deepcopy of the Codec
         self._default = self.name / default
@@ -1036,21 +993,20 @@ class Enum(Bits):
         super().io_parse(io, context, codecs)
 
         value = context[self.name]
-        if value in self.enum:  # type: ignore[operator]
-            context[self.name] = self.enum(value)  # type: ignore[operator]
+        # pyrefly: ignore [not-iterable]
+        if value in self.enum:
+            # pyrefly: ignore [not-callable]
+            context[self.name] = self.enum(value)
             return
-        if value in self.enum._value2member_map_:  # type: ignore[attr-defined]
-            context[self.name] = self.enum[value]  # type: ignore[index]
+        # pyrefly: ignore [missing-attribute]
+        if value in self.enum._value2member_map_:
+            # pyrefly: ignore [bad-index]
+            context[self.name] = self.enum[value]
         if self._default.__class__ is _Pass:
             return
         if self._default.__class__ is _Error:
             Error.raise_error(io, context, codecs, key=value)
-        raise ParseError(
-            io,
-            context,
-            codecs,
-            f"Value {value} wasn't a valid enum, {self._enum!r}",
-        )
+        raise ParseError(io, context, codecs, f"Value {value} wasn't a valid enum, {self._enum!r}")
 
     @override
     def io_build(self, io: BitStream, context: Container, codecs: StackC) -> None:
@@ -1060,11 +1016,14 @@ class Enum(Bits):
         enum = ctx[self.name]
         if not isinstance(enum, EnumBase):
             # Just checking if the value is a valid enum
-            if enum in self._enum:  # type: ignore[operator]
-                ctx.set(self.name, self._enum(enum))  # type: ignore[operator]
+            # pyrefly: ignore [not-iterable]
+            if enum in self._enum:
+                # pyrefly: ignore [not-callable]
+                ctx.set(self.name, self._enum(enum))
             else:
                 try:
-                    ctx.set(self.name, self._enum[enum])  # type: ignore[index]
+                    # pyrefly: ignore [bad-index]
+                    ctx.set(self.name, self._enum[enum])
                 except KeyError:
                     if self._default.__class__ is _Error:
                         Error.raise_error(io, ctx, codecs)
@@ -1089,11 +1048,10 @@ class Mapping(Enum):
     )
     """
 
-    @override
     def __init__(
         self,
         size: int | FunctType[int],
-        map: MappingType[str, int | str],
+        map: MappingType[str, int | str],  # noqa: A002
         *,
         default: DefaultType = Error,
     ) -> None:
@@ -1107,7 +1065,6 @@ class Flag(Bits):
     >>> "inbound" / Flag()
     """
 
-    @override
     def __init__(self) -> None:
         super().__init__(size=1)
 
@@ -1127,7 +1084,6 @@ class Const(Codec):
     >>> "version" / Const(Bits(24), const=0x2)
     """
 
-    @override
     def __init__(self, subcodec: Codec, /, const: int | str) -> None:
         super().__init__(subcodec)
         self.constant = const
@@ -1139,10 +1095,7 @@ class Const(Codec):
         self.subcodec.io_parse(io, context, codecs)
         if (value := context[self.name]) != self.constant:
             raise ConstantError(
-                io,
-                context,
-                codecs,
-                f"Was expecting the value {self.constant} but got {value}",
+                io, context, codecs, f"Was expecting the value {self.constant} but got {value}"
             )
 
     @override
@@ -1152,10 +1105,7 @@ class Const(Codec):
         ctx = context.copy()  # Copy to prevent overiding original container
         if self.name in ctx and (value := ctx[self.name]) != self.constant:
             raise ConstantError(
-                io,
-                ctx,
-                codecs,
-                f"Was expecting the value {self.constant} but got {value}",
+                io, ctx, codecs, f"Was expecting the value {self.constant} but got {value}"
             )
         if self.name not in ctx:
             ctx.set(self.name, self.constant)
@@ -1170,7 +1120,6 @@ class Default(Codec):
     >>> "version" / Default(Bits(24), default=0x2)
     """
 
-    @override
     def __init__(self, subcodec: Codec, /, default: Any) -> None:
         super().__init__(subcodec)
         self.default = default
@@ -1203,7 +1152,6 @@ class Array(Codec):
     >>>  "signs" / Array(Bits(4), count=lambda packet: packet.array_count)
     """
 
-    @override
     def __init__(self, subcodec: Codec, /, count: int | FunctType[int]) -> None:
         super().__init__(subcodec)
         self._count = count
@@ -1211,7 +1159,8 @@ class Array(Codec):
     @override
     @property
     def size(self) -> int:
-        return super().size * self._count  # type: ignore[operator]
+        # pyrefly: ignore [unsupported-operation]
+        return super().size * self._count
 
     def _get_count(self, container: Container) -> int:
         if callable(self._count):
@@ -1301,7 +1250,6 @@ class Computed[T: ValueType](Codec):
     >>> Computed(lambda packet: packet.length * 8)
     """
 
-    @override
     def __init__(self, function: FunctType[T], *args: Any, **kwargs: Any) -> None:
         super().__init__()
         self.function = function
@@ -1338,7 +1286,6 @@ class Bitshift[T: Any = int](Codec):
     )
     """
 
-    @override
     def __init__(
         self,
         field_name: str,
@@ -1411,7 +1358,6 @@ class Checksum(Bits):
         )
     """
 
-    @override
     def __init__(self, size: int, /, crc: Callable[[Buffer], int], field_names: set[str]) -> None:
         self.size: int
         super().__init__(size)
@@ -1422,7 +1368,7 @@ class Checksum(Bits):
         io = BitStream()
         for name, value in context.items():
             if isinstance(value, Container):
-                self._post_build(value)
+                _ = self._post_build(value)
                 continue
             if name not in self.field_names:
                 continue
@@ -1464,7 +1410,6 @@ class GreedyArray(Array):
     >>>  "signs" / Array(Bits(4), max_count=lambda packet: packet.array_count)
     """
 
-    @override
     def __init__(self, subcodec: Codec, /, max_count: int | FunctType[int] = -1) -> None:
         if max_count == 0:
             raise InitError("Count cannot be 0")
@@ -1510,7 +1455,7 @@ class GreedyArray(Array):
         max_count = self._get_count(context)
         if max_count > 0 and len(values) != self._count:
             raise ValueError(
-                f"Expected collection to be size of exactly {max_count}, got {len(values)}",
+                f"Expected collection to be size of exactly {max_count}, got {len(values)}"
             ) from BuildError(io, context, codecs)
         for value in values:
             self.subcodec.io_build(io, Container({self.name: value}), codecs)
@@ -1541,7 +1486,6 @@ class GreedyBits(Codec):
     >>>  "payload" / GreedyBits(max_size=-4)
     """
 
-    @override
     def __init__(self, *, max_size: FunctType[int] | int = 0) -> None:
         super().__init__()
         self._max_size: FunctType[int] | int = max_size
@@ -1562,6 +1506,7 @@ class GreedyBits(Codec):
         # Requires IO
         elif io is None:
             raise SizeOfError(
+                BitStream(),
                 context,
                 codecs,
                 f"Cannot get size of a {self.__class__.__name__} without an IO stream",

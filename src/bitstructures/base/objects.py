@@ -52,6 +52,7 @@ class Container[VT: Any = Any](dict[str, VT]):  # noqa: PLW1641
 
     def __new__(cls, *args: Any, **kwargs: Any) -> Self:  # noqa: D102
         # Needed for deepcopy
+        # pyrefly: ignore [bad-specialization]
         class_ = dict.__new__(cls, *args, **kwargs)
         class_.__parent = None  # noqa: SLF001
         return class_
@@ -69,10 +70,12 @@ class Container[VT: Any = Any](dict[str, VT]):  # noqa: PLW1641
             cls.set_parent(self.__parent)
         return cls
 
+    @override
     def copy(self) -> "Container[VT]":
         """Create a new Container and keep references to all values in the object."""
         return copy(self)
 
+    @override
     def __eq__(self, other: object, /) -> bool:
         if self is other:
             return True
@@ -114,7 +117,7 @@ class Container[VT: Any = Any](dict[str, VT]):  # noqa: PLW1641
         if attr in self:
             return self[attr]
         try:
-            return object.__getattribute__(self, attr)
+            return object.__getattribute__(self, attr)  # pyrefly: ignore[no-any-return-explicit]
         except AttributeError as err:
             err.add_note(f"Attempted to access {attr} from the object {self!r}")
             err.add_note(f"Parent={self.__parent}")
@@ -139,7 +142,7 @@ class Container[VT: Any = Any](dict[str, VT]):  # noqa: PLW1641
                 # List of values or Containers
                 list_padding = "\t{t} {v}{f}\n"
                 stack += padding.format(t=PP_INDENT * depth, v=f"{key} (Collection: {len(value)})")
-                list_stack = []
+                list_stack: list[str] = []
                 container_stack = ""
                 for sn, item in enumerate(value):
                     if isinstance(item, Container):

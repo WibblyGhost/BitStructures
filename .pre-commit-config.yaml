@@ -35,7 +35,7 @@ repos:
       - id: check-docstring-first
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.1
+    rev: v0.16.9
     hooks:
       # Run the linter.
       - id: ruff-check
@@ -44,39 +44,42 @@ repos:
       # Run the formatter.
       - id: ruff-format
 
+  - repo: https://github.com/facebook/pyrefly-pre-commit
+    rev: 1.4.0.dev1
+    hooks:
+      - id: pyrefly-check
+        name: pyrefly
+        stages:
+          - pre-commit
+          - pre-push
+        language: system  # Use system-installed pyrefly
+        files: .*(\.py|\.pyi)$
+        # Recommended to do full repo checks.
+        # However, you can change this to `true` to only check changed files
+        pass_filenames: false
+
   - repo: local
     hooks:
-      - id: mypy
-        name: mypy
+      - id: pytest
+        name: pytest
         stages:
           - pre-commit
           - pre-push
         language: system
-        entry: uv run mypy
-        files: .*(\.py|\.pyi)$
-        args: [src]
+        entry: uv run pytest
+        files: (src|tests)/.*(\.py|\.pyi)$
+        args:
+          - tests
+          - -q
+          - --no-summary
+          - --no-header
+        # Recommended to do full repo checks.
+        # However, you can change this to `true` to only check changed files
         pass_filenames: false
-
-  # - repo: local
-  #   hooks:
-  #     - id: pytest
-  #       name: pytest
-  #       stages:
-  #         - pre-commit
-  #         - pre-push
-  #       language: system
-  #       entry: uv run pytest
-  #       files: (src|tests)/.*(\.py|\.pyi)$
-  #       args:
-  #         - tests
-  #         - -q
-  #         - --no-summary
-  #         - --no-header
-  #       pass_filenames: false
 
   - repo: https://github.com/astral-sh/uv-pre-commit
     # uv version.
-    rev: 0.12.1
+    rev: 0.12.18
     hooks:
       # Ensure the lockfile is up-to-date
       - id: uv-lock

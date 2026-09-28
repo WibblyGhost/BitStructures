@@ -1,43 +1,75 @@
-name: pre-commit
+name: CI
 
 on:
   pull_request:
   push:
-    branches: []
+    branches:
+      - main
+      - master
 
 jobs:
-  BuildPackage:
+  lint:
+    name: Linting
     runs-on: ubuntu-latest
-    steps:
-      # Setup
-      - name: Checkout
-        uses: actions/checkout@v6
-      - name: Install UV
-        uses: astral-sh/setup-uv@v7
-      # Build Steps
-      - name: Build
-        run: uv build
-      - name: Upload Build Dist
-        uses: actions/upload-artifact@v4
-        with:
-          name: build_artifacts
-          path: dist/*
 
-  CodeLinting:
-    runs-on: ubuntu-latest
     steps:
-      # Setup
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
+
       - name: Install UV
-        uses: astral-sh/setup-uv@v7
-      - name: Sync
+        uses: astral-sh/setup-uv@v8
+        with:
+          python-version: "3.13"
+
+      - name: Sync Dependencies
         run: uv sync
-        # Linting Steps
+
       - name: Pre-Commit
         env:
-          # Found these unreliable in CI 17/1/25
-          SKIP: "mypy, pytest, uv-lock"
+          SKIP: "pytest,uv-lock"
         run: uv run pre-commit run --all-files
-      - name: MyPy
-        run: uv run mypy .
+
+  type-check:
+    name: Pyrefly
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install UV
+        uses: astral-sh/setup-uv@v8
+        with:
+          python-version: "3.13"
+
+      - name: Sync Dependencies
+        run: uv sync
+
+      - name: Type Checking
+        run: uv run pyrefly check
+
+      - name: Type Coverage
+        run: uv run pyrefly coverage check --fail-under=90
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install UV
+        uses: astral-sh/setup-uv@v8
+        with:
+          python-version: "3.13"
+
+      - name: Sync Dependencies
+        run: uv sync
+
+      - name: Run Tests
+        run: |
+          uv run pytest \
+            --cov \
+            --cov-report=term-missing \
+            --cov-report=xml
