@@ -837,13 +837,7 @@ IPV4_HEADER = Struct(
     "flags" / Struct(Padding(1), "dont_fragment" / Flag(), "more_fragments" / Flag()),
     "fragment_offset" / Bits(13),
     "ttl" / Bits(8),
-    "protocol"
-    / Enum(
-        8,
-        ICMP=1,
-        TCP=6,
-        UDP=17,
-    ),
+    "protocol" / Enum(8, ICMP=1, TCP=6, UDP=17),
     "checksum" / Bits(16),
     "source_ip" / IpAddress(Bits(32)),
     "destination_ip" / IpAddress(Bits(32)),
@@ -855,12 +849,7 @@ TCP_HEADER = Struct(
     "destination_port" / Bits(16),
     "seq" / Bits(32),
     "ack" / Bits(32),
-    "length"
-    / ExprAdapter(
-        Bits(4),
-        encoder=lambda obj: obj * 4,
-        decoder=lambda obj: ceil(obj / 4),
-    ),
+    "length" / ExprAdapter(Bits(4), encoder=lambda obj: obj * 4, decoder=lambda obj: ceil(obj / 4)),
     Padding(3),
     "flags"
     / Struct(
