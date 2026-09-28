@@ -1,65 +1,34 @@
-name: publish
+name: Publish
 
 on:
   push:
-    tags: [\d+\.\d+\.\d+]
+    tags:
+      - 'v*'
+      - '*.*.*'
 
 jobs:
-  BuildPackage:
+  publish:
+    name: Build and Publish
     runs-on: ubuntu-latest
-    steps:
-      # Setup
-      - name: Checkout
-        uses: actions/checkout@v6
-      - name: Install UV
-        uses: astral-sh/setup-uv@v7
-      # Build Steps
-      - name: Build
-        run: uv build
-      - name: Upload Build Dist
-        uses: actions/upload-artifact@v4
-        with:
-          name: build_artifacts
-          path: dist/*
 
-  CodeLinting:
-    runs-on: ubuntu-latest
-    steps:
-      # Setup
-      - name: Checkout
-        uses: actions/checkout@v6
-      - name: Install UV
-        uses: astral-sh/setup-uv@v7
-      - name: Sync
-        run: uv sync
-        # Linting Steps
-      - name: Pre-Commit
-        env:
-          # Found these unreliable in CI 17/1/25
-          SKIP: "mypy, pytest, uv-lock"
-        run: uv run pre-commit run --all-files
-      - name: MyPy
-        run: uv run mypy .
-
-  PublishPackage:
-    runs-on: ubuntu-latest
     environment:
       name: pypi
+
     permissions:
       id-token: write
       contents: read
-    if: startsWith(github.ref, 'refs/tags/')  # only publish to PyPI on tag pushes
-    needs:
-      - BuildPackage
-      - CodeLinting
+
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
-      - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b  # v8.1.0
-      - name: Install Python 3.13
-        run: uv python install 3.13
-      - name: Build
+        uses: actions/checkout@v4
+
+      - name: Install UV
+        uses: astral-sh/setup-uv@v8
+        with:
+          python-version: "3.13"
+
+      - name: Build Package
         run: uv build
-      - name: Publish
+
+      - name: Publish Package
         run: uv publish

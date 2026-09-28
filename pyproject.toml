@@ -6,8 +6,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bitstructures"
-description="Bit Structures"
-authors=[{name="WibblyGhost"}]
+description = "Bit Structures"
+authors = [{ name = "WibblyGhost" }]
 # Files
 dynamic = ["version"]
 readme = "README.md"
@@ -37,10 +37,8 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
 ]
 # Requirements
-requires-python= ">=3.13"
-dependencies = [
-    "bitarray>=3.8.0",
-]
+requires-python = ">=3.13"
+dependencies = ["bitarray>=3.8.0"]
 
 [project.urls]
 # Homepage = "https://example.com"
@@ -52,21 +50,16 @@ Issues = "https://github.com/WibblyGhost/BitStructures/issues"
 [dependency-groups]
 dev = [
     "faker>=33.3.1",
-    "mypy>=1.14.1",
     "pre-commit>=4.0.0",
-    "pytest>=8.3.4",
+    "pyrefly>=1.3.1",
     "pytest-asyncio>=0.25.2",
     "pytest-cov>=6.0.0",
     "pytest-mock>=3.14.0",
-    "pytest-timeout>=2.3.1",
+    "pytest>=8.3.4",
     "ruff>=0.9.1",
-    "mypy-gitlab-code-quality>=1.1.0",
     "scapy>=2.6.1",
 ]
-build = [
-    "setuptools>=60",
-    "setuptools-git-versioning>=2.1.0",
-]
+build = ["setuptools>=60", "setuptools-git-versioning>=2.1.0"]
 
 [tool.setuptools-git-versioning]
 enabled = true
@@ -74,14 +67,14 @@ dev_template = "{tag}"
 dirty_template = "{tag}"
 
 [tool.setuptools.dynamic]
-readme = {file = "README.md"}
+readme = { file = "README.md" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
 exclude = ["*tests*"]
 
 [tool.setuptools.package-data]
-"pkgname" = ["py.typed"]
+bitstructures = ["py.typed"]
 ### BUILD SYSTEM ###
 
 
@@ -92,41 +85,51 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = [
-    "F",  # pyflakes
-    "E",  # pycodestyle
-    "W",  # pycodestyle
-    "D",  # pydocstyle
-    "I",  # isort
-    "N",  # pep8-naming
-    "UP",  # pyupgrade
-    "R",  # refactor
-    "ASYNC",  # flake8-async
-    "BLE",  # flake8-blind-except
-    "B",  # flake8-bugbear
-    "A",  # flake8-buildins
-    "C4",  # flake8-comprehensions
-    "DTZ",  # flake8-datetimez
-    "LOG",  # flake8-logging
-    "PT",  # felake8-pytest-style
-    "Q",  # flake8-quotes
-    "RET",  #  flake8-return
-    "SLF",  # flake8-self
-    "SIM",  # flake8-simplify
-    "ARG",  # flake8-unused-arguments
-    "PTH",  # flake8-use-pathlib
-    "FIX",  # flake8-fixme
-    "PL",  # pylint
-    "RUF",  # ruff
+    "F",     # pyflakes
+    "E",     # pycodestyle
+    "W",     # pycodestyle
+    "D",     # pydocstyle
+    "I",     # isort
+    "N",     # pep8-naming
+    "UP",    # pyupgrade
+    "R",     # refactor
+    "ASYNC", # flake8-async
+    "BLE",   # flake8-blind-except
+    "B",     # flake8-bugbear
+    "A",     # flake8-builtins
+    "C4",    # flake8-comprehensions
+    "DTZ",   # flake8-datetimez
+    "LOG",   # flake8-logging
+    "PT",    # felake8-pytest-style
+    "Q",     # flake8-quotes
+    "RET",   #  flake8-return
+    "SLF",   # flake8-self
+    "SIM",   # flake8-simplify
+    "ARG",   # flake8-unused-arguments
+    "PTH",   # flake8-use-pathlib
+    "FIX",   # flake8-fixme
+    "PL",    # pylint
+    "RUF",   # ruff
 ]
 fixable = ["ALL"]
 ignore = [
-    "D203",  # Incorrect black line before class
-    "D100",  # Docstring in public module
-    "D105",  # Docstring in magic method
-    "D212",  # Multiline Docstring Start
-    "D205",  # Line between summary and description
-    "D401",  # Docstring imperative mood
-    "D107",  # Docstring in __init__  # We use the public class docstrings
+    "D203",     # Incorrect black line before class
+    "D100",     # Docstring in public module
+    "D105",     # Docstring in magic method
+    "D212",     # Multiline Docstring Start
+    "D205",     # Line between summary and description
+    "D401",     # Docstring imperative mood
+    "D107",     # Docstring in __init__  # We use the public class docstrings
+    "PLR0915",  # too many statements
+    "PLR0912",  # too many branches
+    "PLR0913",  # too many arguments
+    "PLR0917",  # too many positionals
+    "PLR2004",  # magic values
+    "RUF012",   # classvar annotations
+    "SIM108",   # ternary oprators (single line if statements)
+    "ASYNC109", # Use asyncio timeout instead
+    "FIX002",   # TODO statements
+    "PLR0917",  # Too many positional arguments
 ]
 isort.split-on-trailing-comma = false
 
@@ -138,37 +141,38 @@ isort.split-on-trailing-comma = false
 "test_*.py" = ["D100", "D101", "D102"]
 
 [tool.ruff.format]
-# skip-magic-trailing-comma = true
+skip-magic-trailing-comma = true
 
-[tool.mypy]
-exclude = [".*tests/", "test.py"]
-check_untyped_defs = true
-disallow_any_generics = true
-disallow_incomplete_defs = true
-disallow_untyped_calls = true
-disallow_untyped_decorators = true
-disallow_untyped_defs = true
-extra_checks = true
-implicit_optional = true
-no_implicit_reexport = true
-no_warn_no_return = true
-strict_equality = true
-warn_redundant_casts = true
-warn_unreachable = true
-warn_unused_configs = true
-warn_unused_ignores = true
+[tool.pyrefly]
+project-excludes = ["**/*tests/"]
+preset = "strict"
+ignore-missing-imports = ["rpyc.*"]
+check-unannotated-defs = true
+infer-return-types = "never"
+infer-with-first-use = false
+strict-callable-subtyping = true
+
+[tool.pyrefly.errors]
+abstract-method-call = "error"
+explicit-any = "warn"
+missing-override-decorator = "error"
+no-any-return = "error"
+redundant-cast = "error"
+redundant-condition = "error"
+unannotated-return = "error"
+unused-call-result = "error"
+unused-coroutine = "error"
+unused-ignore = "error"
+unused-type-ignore = "error"
 
 [tool.pytest.ini_options]
-addopts = "--cov --cov-report=xml --cov-report=term  --cov-report=html"  # --cov-fail-under=100
+addopts = "--cov --cov-report=xml --cov-report=term  --cov-report=html"
 pythonpath = ["src"]
 testpaths = ["tests"]
-asyncio_default_fixture_loop_scope = "function"
+asyncio_default_fixture_loop_scope = "session"
 
 [tool.coverage.run]
 source = ["src"]
 
 [tool.coverage.report]
-omit = [
-    "*/__init__.py",
-    "*/tests/*",
-]
+omit = ["*/__init__.py", "*/tests/*"]

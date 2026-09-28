@@ -16,7 +16,7 @@ class TestConstruction:
 
     def test_construct_from_bytes(self) -> None:
         bs = BitStream(b"\x0f")
-        assert len(bs) == 8  # noqa: PLR2004
+        assert len(bs) == 8
         assert bytes(bs) == b"\x0f"
 
     def test_construct_from_bitarray(self) -> None:
@@ -35,7 +35,7 @@ class TestConversions:
         assert BitStream("1100").bin == "1100"
 
     def test_int_conversion(self) -> None:
-        assert int(BitStream("1010")) == 10  # noqa: PLR2004
+        assert int(BitStream("1010")) == 10
 
     def test_bytes_conversion(self) -> None:
         bs = BitStream("00001111")
@@ -269,10 +269,10 @@ class TestPadding:
 
 class TestMisc:
     def test_bit_length(self) -> None:
-        assert BitStream("10101").bit_length() == 5  # noqa: PLR2004
+        assert BitStream("10101").bit_length() == 5
 
     def test_len(self) -> None:
-        assert len(BitStream("10101")) == 5  # noqa: PLR2004
+        assert len(BitStream("10101")) == 5
 
     def test_hash_matches_underlying_stream(self) -> None:
         bs = BitStream("1010")

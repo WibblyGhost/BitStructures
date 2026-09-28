@@ -15,7 +15,6 @@ class Blacklisted(Bits):
     >>> "digit" = Blacklisted(8, [0])
     """
 
-    @override
     def __init__(self, size: int, array: Iterable[int]) -> None:
         super().__init__(size)
         self._array = array
@@ -59,7 +58,6 @@ class Whitelisted(Bits):
     >>> "digit" = Whitelisted(8, list(range(34)))
     """
 
-    @override
     def __init__(self, size: int, array: Iterable[int]) -> None:
         super().__init__(size)
         self._array = array

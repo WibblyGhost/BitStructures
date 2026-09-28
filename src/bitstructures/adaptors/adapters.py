@@ -23,7 +23,6 @@ class Adapter(Codec, AdapterProtocol):
     def encode(self, parent: "Container", codecs: "StackC", value: Any) -> Any: ...
     """
 
-    @override
     def __init__(self, subcodec: Codec) -> None:
         super().__init__(subcodec)
 
@@ -83,7 +82,6 @@ class Scaler(Adapter, AdapterProtocol):
     >>> "timer" / Scaler(Bits(16), factor=0.1)
     """
 
-    @override
     def __init__(self, subcodec: Codec, /, factor: float) -> None:
         if not isinstance(subcodec, Bits):
             raise TypeError(
@@ -113,7 +111,6 @@ class ExprAdapter(Adapter, AdapterProtocol):
     )
     """
 
-    @override
     def __init__(self, subcodec: Codec, encoder: ExpType, decoder: ExpType) -> None:
         super().__init__(subcodec)
         self._encode = encoder
